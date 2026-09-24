@@ -1,0 +1,50 @@
+{
+  "name": "@lachesis/runtime",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Lachesis dsh 0.1.7-alpha.2 ACP execution adapter",
+  "engines": {
+    "node": ">=22"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test --experimental-strip-types --test-concurrency=1 --test-reporter spec ./test/*.test.ts"
+  },
+  "dependencies": {
+    "@agentclientprotocol/sdk": "1.4.0",
+    "@deepseek-ai/cordis": "~4.0.4",
+    "@deepseek-ai/dsh": "0.1.7-alpha.2",
+    "@deepseek-ai/dsh-http-proxy": "0.1.7-alpha.2",
+    "@deepseek-ai/dsh-subprocess": "0.1.7-alpha.2",
+    "@deepseek-ai/dsh-subprocess-local": "0.1.7-alpha.2",
+    "@deepseek-ai/dsh-timeout": "0.1.7-alpha.2",
+    "@deepseek-ai/dsh-win32-process": "0.1.7-alpha.2",
+    "zod": "^4.1.5",
+    "@deepseek-ai/dsh-sandbox-local": "0.1.7-alpha.2",
+    "@deepseek-ai/dsh-sandbox-policy": "0.1.7-alpha.2",
+    "@deepseek-ai/dsh-session-projection": "0.1.7-alpha.2",
+    "@deepseek-ai/dsh-fs-sandbox": "0.1.7-alpha.2",
+    "@deepseek-ai/dsh-pwsh-sandbox": "0.1.7-alpha.2",
+    "@deepseek-ai/dsh-bash-sandbox": "0.1.7-alpha.2",
+    "@deepseek-ai/dsh-shell": "0.1.7-alpha.2",
+    "@deepseek-ai/dsh-sandbox": "0.1.7-alpha.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2"
+  }
+}
