@@ -1,0 +1,28 @@
+{
+  "name": "lachesis",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "packageManager": "pnpm@10.29.2",
+  "engines": {
+    "node": ">=24.16.0"
+  },
+  "scripts": {
+    "build": "pnpm -r --if-present build",
+    "check": "pnpm -r --if-present check",
+    "test": "pnpm -r --if-present test",
+    "dev": "node scripts/start.mjs",
+    "start": "node scripts/start.mjs",
+    "pairing-code": "node scripts/pairing-code.mjs",
+    "mcp:stdio": "node scripts/mcp-stdio.mjs"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh": "0.1.7-alpha.2",
+    "@deepseek-ai/dsh-launch-environment": "0.1.7-alpha.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.2",
+    "tsx": "^4.20.0"
+  }
+}
