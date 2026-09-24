@@ -1,0 +1,30 @@
+{
+  "name": "@lachesis/server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/plugin.d.ts",
+      "default": "./dist/plugin.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "node --import tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@deepseek-ai/cordis": "~4.0.4",
+    "@deepseek-ai/dsh-host-webserver": "0.1.7-alpha.2",
+    "@deepseek-ai/schemastery": "~3.18.4",
+    "@lachesis/contracts": "workspace:*",
+    "@lachesis/domain": "workspace:*",
+    "@lachesis/runtime": "workspace:*",
+    "@lachesis/workspace": "workspace:*",
+    "@lachesis/mcp": "workspace:*"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.0"
+  }
+}
