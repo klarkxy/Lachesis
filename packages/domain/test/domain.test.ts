@@ -15,10 +15,10 @@ import {
 
 test('transactional migration is recorded on the real temp database', (t) => {
   const { domain, databasePath } = openTemp(t)
-  assert.equal(domain.schemaVersion(), 2)
+  assert.equal(domain.schemaVersion(), 3)
   domain.close()
   const again = openDomain({ databasePath, recoverInterrupted: false })
-  assert.equal(again.schemaVersion(), 2)
+  assert.equal(again.schemaVersion(), 3)
   again.close()
 })
 

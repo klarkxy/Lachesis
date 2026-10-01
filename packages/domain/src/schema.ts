@@ -1,4 +1,17 @@
-export const SCHEMA_VERSION = 2
+export const SCHEMA_VERSION = 3
+
+export const DEFAULT_HARNESS_ID = 'dsh-acp-0.1.7'
+
+export const MIGRATION_V3 = `
+ALTER TABLE profiles ADD COLUMN harness_id TEXT NOT NULL DEFAULT '${DEFAULT_HARNESS_ID}';
+ALTER TABLE profiles ADD COLUMN config_json TEXT NOT NULL DEFAULT '{}';
+
+UPDATE profiles SET config_json = json_object(
+  'providerRef', provider_ref,
+  'modelId', model_id,
+  'reasoningEffort', reasoning_effort
+);
+`
 
 export const MIGRATION_V2 = `
 ALTER TABLE issues ADD COLUMN owned_paths TEXT NOT NULL DEFAULT '[]';

@@ -26,6 +26,11 @@ export interface Profile {
   id: Id
   name: string
   avatarPresetId: string
+  /** Harness that executes this Profile, e.g. "dsh-acp-0.1.7" or "aider-0.86". */
+  harnessId: string
+  /** JSON.stringify of the harness specific configuration. */
+  configJson: string
+  /** ACP mirror of configJson kept for dsh compatibility. */
   providerRef: string
   modelId: string
   reasoningEffort: string | null
@@ -188,6 +193,10 @@ export interface CreateProfileInput {
   providerRef: string
   modelId: string
   reasoningEffort: string | null
+  /** Defaults to the dsh ACP harness when omitted. */
+  harnessId?: string
+  /** Defaults to a mirror of the ACP fields when omitted; must be a JSON object. */
+  configJson?: string
 }
 
 export interface CreateProjectInput {

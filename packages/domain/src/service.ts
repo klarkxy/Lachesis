@@ -28,7 +28,7 @@ import type {
   UpdateIssuePlanInput,
 } from '@lachesis/contracts'
 import { DomainError, ErrorCode } from './errors.ts'
-import { MIGRATION_V1, MIGRATION_V2, SCHEMA_VERSION } from './schema.ts'
+import { MIGRATION_V1, MIGRATION_V2, MIGRATION_V3, DEFAULT_HARNESS_ID, SCHEMA_VERSION } from './schema.ts'
 import type {
   Actor,
   ApplicationDetail,
@@ -63,6 +63,7 @@ import {
   parseCursor,
   parseJson,
   sha256Json,
+  stableStringify,
 } from './util.ts'
 
 type Row = Record<string, SQLOutputValue>
@@ -115,6 +116,89 @@ function requireOperator(actor: Actor, action: string): void {
   if (actor.kind === 'worker') {
     throw new DomainError(ErrorCode.forbidden, `Workers cannot ${action}`)
   }
+}
+
+function isDshHarness(harnessId: string): boolean {
+  return harnessId === DEFAULT_HARNESS_ID || harnessId.startsWith('dsh')
+}
+
+/** Lenient parse: blank, invalid or non-object harness config reads back as null so callers fall back. */
+function parseHarnessObject(configJson: string | null | undefined): Record<string, unknown> | null {
+  if (configJson === null || configJson === undefined) return null
+  const trimmed = configJson.trim()
+  if (!trimmed) return null
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(trimmed)
+  } catch {
+    return null
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+  return parsed as Record<string, unknown>
+}
+
+function hasHarnessConfig(config: Record<string, unknown> | null): config is Record<string, unknown> {
+  return config !== null && Object.keys(config).length > 0
+}
+
+function harnessText(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined
+}
+
+function harnessTextOrNull(value: unknown): string | null | undefined {
+  if (value === null) return null
+  return typeof value === 'string' ? value : undefined
+}
+
+interface ResolvedProfileConfig {
+  harnessId: string
+  configJson: string
+  providerRef: string
+  modelId: string
+  reasoningEffort: string | null
+}
+
+/**
+ * Resolves the harness identity and configuration of a Profile, keeping the legacy ACP columns
+ * and configJson in agreement. dsh harnesses mirror providerRef/modelId/reasoningEffort into
+ * configJson; other harnesses keep their own config untouched and only use the columns as a
+ * compatibility mirror.
+ *
+ * On create a blank ACP field means "not supplied" so a harness config can fill it in. On update an
+ * explicit patch value always wins, including an empty string or null, so edits and clears behave
+ * exactly as they did before harness support.
+ */
+function resolveProfileConfig(
+  input: {
+    harnessId?: string
+    configJson?: string
+    providerRef?: string
+    modelId?: string
+    reasoningEffort?: string | null
+  },
+  current: ResolvedProfileConfig | null,
+): ResolvedProfileConfig {
+  const harnessId = (input.harnessId ?? current?.harnessId ?? DEFAULT_HARNESS_ID).trim()
+  if (!harnessId) throw new DomainError(ErrorCode.invalidInput, 'Profile harnessId is required')
+  const raw = input.configJson ?? current?.configJson ?? null
+  if (raw !== null && raw.trim() && !parseHarnessObject(raw)) {
+    throw new DomainError(ErrorCode.invalidInput, 'Profile configJson must be a JSON object')
+  }
+  const config = parseHarnessObject(raw) ?? {}
+  const supplied = (explicit: string | undefined): boolean =>
+    explicit !== undefined && (current !== null || explicit.trim().length > 0)
+  const providerRef = supplied(input.providerRef) ? (input.providerRef as string) : harnessText(config.providerRef) ?? current?.providerRef ?? ''
+  const modelId = supplied(input.modelId) ? (input.modelId as string) : harnessText(config.modelId) ?? current?.modelId ?? ''
+  const reasoningEffort = input.reasoningEffort !== undefined && (current !== null || input.reasoningEffort !== null)
+    ? input.reasoningEffort
+    : harnessTextOrNull(config.reasoningEffort) ?? current?.reasoningEffort ?? null
+  if (isDshHarness(harnessId) && (!providerRef.trim() || !modelId.trim())) {
+    throw new DomainError(ErrorCode.invalidInput, 'Profile configuration is incomplete')
+  }
+  const merged = isDshHarness(harnessId)
+    ? { ...config, providerRef, modelId, reasoningEffort }
+    : config
+  return { harnessId, configJson: JSON.stringify(merged), providerRef, modelId, reasoningEffort }
 }
 
 export function hasDependencyCycle(edges: Map<string, readonly string[]>): boolean {
@@ -296,26 +380,38 @@ export class DomainService {
   createProfile(actor: Actor, input: CreateProfileInput): Profile {
     requireOperator(actor, 'create profiles')
     this.assertProfileInput(input)
+    const config = resolveProfileConfig({
+      ...(input.harnessId !== undefined ? { harnessId: input.harnessId } : {}),
+      ...(input.configJson !== undefined ? { configJson: input.configJson } : {}),
+      ...(input.providerRef !== undefined ? { providerRef: input.providerRef } : {}),
+      ...(input.modelId !== undefined ? { modelId: input.modelId } : {}),
+      ...(input.reasoningEffort !== undefined ? { reasoningEffort: input.reasoningEffort } : {}),
+    }, null)
     const createdAt = nowIso()
     const profile: Profile = {
       id: newId(),
       name: input.name.trim(),
       avatarPresetId: input.avatarPresetId,
-      providerRef: input.providerRef,
-      modelId: input.modelId,
-      reasoningEffort: input.reasoningEffort,
+      harnessId: config.harnessId,
+      configJson: config.configJson,
+      providerRef: config.providerRef,
+      modelId: config.modelId,
+      reasoningEffort: config.reasoningEffort,
       revision: 1,
       disabled: false,
       createdAt,
     }
     this.tx(() => {
       this.db.prepare(
-        `INSERT INTO profiles (id, name, avatar_preset_id, provider_ref, model_id, reasoning_effort, revision, disabled, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, 1, 0, ?)`,
+        `INSERT INTO profiles (id, name, avatar_preset_id, harness_id, config_json,
+           provider_ref, model_id, reasoning_effort, revision, disabled, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?)`,
       ).run(
         profile.id,
         profile.name,
         profile.avatarPresetId,
+        profile.harnessId,
+        profile.configJson,
         profile.providerRef,
         profile.modelId,
         profile.reasoningEffort,
@@ -355,16 +451,23 @@ export class DomainService {
           actual: current.revision,
         })
       }
+      const config = resolveProfileConfig({
+        ...(patch.harnessId !== undefined ? { harnessId: patch.harnessId } : {}),
+        ...(patch.configJson !== undefined ? { configJson: patch.configJson } : {}),
+        ...(patch.providerRef !== undefined ? { providerRef: patch.providerRef } : {}),
+        ...(patch.modelId !== undefined ? { modelId: patch.modelId } : {}),
+        ...(patch.reasoningEffort !== undefined ? { reasoningEffort: patch.reasoningEffort } : {}),
+      }, current)
       const next = {
         name: patch.name !== undefined ? patch.name.trim() : current.name,
         avatarPresetId: patch.avatarPresetId ?? current.avatarPresetId,
-        providerRef: patch.providerRef ?? current.providerRef,
-        modelId: patch.modelId ?? current.modelId,
-        reasoningEffort: patch.reasoningEffort !== undefined ? patch.reasoningEffort : current.reasoningEffort,
+        providerRef: config.providerRef,
+        modelId: config.modelId,
+        reasoningEffort: config.reasoningEffort,
         disabled: patch.disabled ?? current.disabled,
       }
       if (!next.name) throw new DomainError(ErrorCode.invalidInput, 'Profile name is required')
-      if (!next.avatarPresetId || !next.providerRef || !next.modelId) {
+      if (!next.avatarPresetId) {
         throw new DomainError(ErrorCode.invalidInput, 'Profile configuration is incomplete')
       }
       if (next.disabled && !current.disabled) {
@@ -380,18 +483,23 @@ export class DomainService {
         }
       }
       const configChanged =
+        config.harnessId !== current.harnessId ||
         next.providerRef !== current.providerRef ||
         next.modelId !== current.modelId ||
-        next.reasoningEffort !== current.reasoningEffort
+        next.reasoningEffort !== current.reasoningEffort ||
+        stableStringify(parseHarnessObject(config.configJson)) !== stableStringify(parseHarnessObject(current.configJson))
       const revision = configChanged ? current.revision + 1 : current.revision
       const createdAt = nowIso()
       const result = this.db.prepare(
         `UPDATE profiles
-         SET name = ?, avatar_preset_id = ?, provider_ref = ?, model_id = ?, reasoning_effort = ?, revision = ?, disabled = ?
+         SET name = ?, avatar_preset_id = ?, harness_id = ?, config_json = ?, provider_ref = ?, model_id = ?,
+             reasoning_effort = ?, revision = ?, disabled = ?
          WHERE id = ? AND revision = ?`,
       ).run(
         next.name,
         next.avatarPresetId,
+        config.harnessId,
+        config.configJson,
         next.providerRef,
         next.modelId,
         next.reasoningEffort,
@@ -1525,6 +1633,10 @@ export class DomainService {
       this.db.exec(MIGRATION_V2)
       this.db.prepare('INSERT INTO schema_migrations (version, applied_at) VALUES (2, ?)').run(nowIso())
     })
+    if (version < 3) this.tx(() => {
+      this.db.exec(MIGRATION_V3)
+      this.db.prepare('INSERT INTO schema_migrations (version, applied_at) VALUES (3, ?)').run(nowIso())
+    })
   }
 
   private tx<T>(fn: () => T): T {
@@ -1756,7 +1868,8 @@ export class DomainService {
 
   private assertProfileInput(input: CreateProfileInput): void {
     if (!input.name.trim()) throw new DomainError(ErrorCode.invalidInput, 'Profile name is required')
-    if (!input.avatarPresetId.trim() || !input.providerRef.trim() || !input.modelId.trim()) {
+    // Harness completeness (providerRef/modelId for dsh) is enforced by resolveProfileConfig.
+    if (!input.avatarPresetId?.trim()) {
       throw new DomainError(ErrorCode.invalidInput, 'Profile configuration is incomplete')
     }
   }
@@ -1809,13 +1922,24 @@ export class DomainService {
   }
 
   private mapProfile(row: Row): Profile {
+    const providerRef = asText(row.provider_ref)
+    const modelId = asText(row.model_id)
+    const reasoningEffort = asTextOrNull(row.reasoning_effort)
+    const storedConfig = asTextOrNull(row.config_json)
+    const parsedConfig = parseHarnessObject(storedConfig)
+    const config = hasHarnessConfig(parsedConfig) ? parsedConfig : null
+    const configReasoning = config ? harnessTextOrNull(config.reasoningEffort) : undefined
     return {
       id: asText(row.id),
       name: asText(row.name),
       avatarPresetId: asText(row.avatar_preset_id),
-      providerRef: asText(row.provider_ref),
-      modelId: asText(row.model_id),
-      reasoningEffort: asTextOrNull(row.reasoning_effort),
+      harnessId: asTextOrNull(row.harness_id) ?? DEFAULT_HARNESS_ID,
+      // Profiles written before harness support keep working: a missing or empty config is rebuilt
+      // from the ACP columns, and a stored config stays authoritative for the fields it carries.
+      configJson: config ? (storedConfig as string).trim() : JSON.stringify({ providerRef, modelId, reasoningEffort }),
+      providerRef: (config ? harnessText(config.providerRef) : undefined) ?? providerRef,
+      modelId: (config ? harnessText(config.modelId) : undefined) ?? modelId,
+      reasoningEffort: configReasoning === undefined ? reasoningEffort : configReasoning,
       revision: asInt(row.revision),
       disabled: asInt(row.disabled) === 1,
       createdAt: asText(row.created_at),
