@@ -4,7 +4,7 @@ import { readFile, realpath } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { createDshAcpExecutor, disposeAcpChild } from '../src/index.ts'
 import type { SubprocessHandle } from '@deepseek-ai/dsh-subprocess'
@@ -17,6 +17,32 @@ function pidAlive(pid: number): boolean {
   } catch {
     return false
   }
+}
+
+/**
+ * Walk a live process's real ancestor chain. The confined worker is no longer a
+ * direct child of the subprocess-local Job runner — the sandbox wrap sits
+ * between them — so containment is proved by ancestry, not by one PID edge.
+ */
+function ancestorsOf(pid: number): number[] {
+  const chain: number[] = []
+  let current = pid
+  for (let depth = 0; depth < 16; depth += 1) {
+    let stdout = ''
+    try {
+      stdout = execFileSync('powershell.exe', [
+        '-NoProfile', '-NonInteractive', '-Command',
+        `(Get-CimInstance Win32_Process -Filter "ProcessId=${current}").ParentProcessId`,
+      ], { encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'], timeout: 10_000 })
+    } catch {
+      break
+    }
+    const parsed = Number(stdout.trim())
+    if (!Number.isInteger(parsed) || parsed <= 0 || parsed === 4) break
+    chain.push(parsed)
+    current = parsed
+  }
+  return chain
 }
 
 test('final subprocess exit observation is bounded and reports unconfirmed exit', { timeout: 2_000 }, async () => {
@@ -129,11 +155,19 @@ test('Windows native Job stops worker and descendant after an ungraceful runtime
     for (const file of ['agent-parent.pid', 'agent.pid', 'child.pid']) {
       pids.push(Number(await readFile(join(workspace.cwd, file), 'utf8')))
     }
-    const [runnerPid] = pids
+    const [agentParentPid] = pids
+    const runnerPid = launch.runnerPid
     assert.ok(runnerPid && runnerPid !== parent.pid, 'worker must be launched by the native runner, not directly by fallback')
     const nativeRunner = await realpath(fileURLToPath(import.meta.resolve('@deepseek-ai/dsh-subprocess-local/runner')))
     assert.equal(launch.runnerEntry, nativeRunner)
-    assert.equal(launch.runnerPid, runnerPid, 'actual native runner PID must match the ACP worker parent PID')
+    // The Run is spawned confined, so the native Job runner now owns a sandbox
+    // wrap that in turn owns the worker. Containment is the whole chain, so
+    // assert the chain rather than one direct-parent edge.
+    const chain = ancestorsOf(agentParentPid)
+    t.diagnostic(`workerAncestry=${JSON.stringify([agentParentPid, ...chain])} jobRunner=${runnerPid}`)
+    assert.ok(chain.includes(runnerPid),
+      `the native Job runner ${runnerPid} must be an ancestor of the confined worker, saw ${JSON.stringify(chain)}`)
+    assert.ok(chain.includes(parent.pid), 'the crashed runtime parent must be the root of the worker chain')
     assert.doesNotMatch(stderr, /weaker process-tree containment/)
     const heartbeatPath = join(workspace.cwd, 'heartbeat.txt')
     const heartbeatDeadline = Date.now() + 5_000

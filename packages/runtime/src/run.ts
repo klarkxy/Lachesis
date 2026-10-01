@@ -7,10 +7,12 @@ import type {
   StopReason,
 } from '@agentclientprotocol/sdk'
 import type { SubprocessHandle, SubprocessOutcome } from '@deepseek-ai/dsh-subprocess'
+import type { RunnerFailureRule } from '@deepseek-ai/dsh-sandbox'
 import {
   ACP_MODEL_CONFIG_ID,
   ACP_REASONING_CONFIG_ID,
   acpModelOptionValue,
+  DEFAULT_RUN_SANDBOX_MODE,
   type DeliveryStatus,
   type PermissionAnswer,
   type PermissionOption,
@@ -20,16 +22,19 @@ import {
   type RunEvent,
   type RunHandle,
   type RunOutcome,
+  type RunSandboxFacts,
+  type RunSandboxVerdict,
   type RunSpec,
   type RunState,
 } from './types.ts'
 import { EventHub } from './events.ts'
-import { classifyRuntimeEnvironmentError, RangeExitUnconfirmedError } from './errors.ts'
+import { classifyRuntimeEnvironmentError, classifySandboxVerdict, RangeExitUnconfirmedError, RuntimeEnvironmentError } from './errors.ts'
 import { redactText } from './redaction.ts'
 import { assertAbsoluteDirectory, assertIsolatedDshHome } from './paths.ts'
 import { connectAcpClient, methods, PROTOCOL_VERSION, type AcpAgent } from './acp.ts'
 import { disposeAcpChild } from './subprocess.ts'
 import type { SubprocessHost } from './subprocess.ts'
+import { classifySandboxOutcome, runSandboxPolicy, runSandboxRoot, sandboxFacts } from './sandbox.ts'
 import { defaultAcpCommand, resolveArgv } from './command.ts'
 import { withDeadline } from './deadline.ts'
 
@@ -81,6 +86,11 @@ export class AcpRun implements RunHandle {
   private rangeExited = false
   private failure: string | undefined
   private stderrOffset = 0
+  private sandboxFacts: RunSandboxFacts | undefined
+  private sandboxRules: readonly RunnerFailureRule[] = []
+  private sandboxViolation: RunSandboxVerdict | undefined
+  /** Set only when the runner itself failed, so the service can block the host. */
+  private environmentFault: RuntimeEnvironmentError | undefined
 
   constructor(spec: RunSpec, options: RunInternalOptions) {
     this.spec = spec
@@ -124,7 +134,7 @@ export class AcpRun implements RunHandle {
           cause: new AggregateError([error, disposalError], 'ACP startup and teardown failed'),
         })
       }
-      throw classifyRuntimeEnvironmentError(error) ?? (error instanceof Error ? error : new Error(this.failure))
+      throw classifyRuntimeEnvironmentError(error) ?? this.environmentFault ?? (error instanceof Error ? error : new Error(this.failure))
     }
   }
 
@@ -132,9 +142,10 @@ export class AcpRun implements RunHandle {
     const cwd = assertAbsoluteDirectory('cwd', this.spec.cwd)
     const dshHome = assertIsolatedDshHome(this.spec.dshHome)
     const subprocess = this.options.host.subprocess
-    const argv = await withDeadline('ACP executable resolution', this.options.startupTimeoutMs ?? 120_000,
+    const resolved = await withDeadline('ACP executable resolution', this.options.startupTimeoutMs ?? 120_000,
       () => resolveArgv(subprocess, this.spec.command ?? defaultAcpCommand(), this.spec.env), this.lifetime.signal)
     this.lifetime.signal.throwIfAborted()
+    const argv = await this.confineArgv(resolved, cwd, dshHome)
     const graceMs = this.options.graceMs ?? DEFAULT_GRACE_MS
     const child = this.options.host.spawn({
       argv,
@@ -157,6 +168,8 @@ export class AcpRun implements RunHandle {
       stderrDisposition: 'collect',
       stdoutDisposition: 'pipe',
       stdinDisposition: 'pipe',
+      // `confineArgv` ran without throwing, so the wrap is always present here.
+      sandbox: this.sandboxFacts!,
     }
     this.attachStderrPoll(child)
     void child.done.then(
@@ -252,6 +265,56 @@ export class AcpRun implements RunHandle {
     if (closeError) throw closeError
   }
 
+  /**
+   * Confine the harness range before it is spawned. This is the boundary the
+   * readiness probe only ever exercised on its own short-lived process: here the
+   * same enforcement governs the worker that will actually touch the workspace.
+   * The provider fails closed, so a host that cannot confine never reaches a
+   * spawn.
+   */
+  private async confineArgv(argv: readonly string[], cwd: string, dshHome: string): Promise<readonly string[]> {
+    const mode = this.spec.sandbox?.mode ?? DEFAULT_RUN_SANDBOX_MODE
+    const root = runSandboxRoot(cwd, dshHome)
+    const policy = runSandboxPolicy(mode, root)
+    const wrap = await withDeadline('sandbox confinement wrap', this.options.startupTimeoutMs ?? 120_000,
+      (signal) => this.options.host.confine(argv, policy, signal), this.lifetime.signal)
+    this.sandboxFacts = sandboxFacts(mode, wrap, policy.workspaceRoot)
+    this.sandboxRules = wrap.runnerFailureRules
+    return wrap.argv
+  }
+
+  /**
+   * A range that confinement stopped must never be reported as an ordinary
+   * exit, so the settled stderr is classified against this wrap's own dialect
+   * and the verdict is published before `process_exit`.
+   */
+  private classifySandbox(child: SubprocessHandle): void {
+    const facts = this.sandboxFacts
+    if (facts === undefined || this.sandboxViolation !== undefined) return
+    const reader = child.collected.stderr
+    let stderr = ''
+    try {
+      stderr = reader?.readFrom(0).text ?? ''
+    } catch {
+      return
+    }
+    const verdict = classifySandboxOutcome(facts, this.processOutcome?.exitCode ?? null, stderr, this.sandboxRules)
+    if (verdict === undefined) return
+    this.sandboxViolation = verdict
+    const cause = verdict.runnerFailed ? 'sandbox runner failed' : 'sandbox denied a file operation'
+    // A denied range is a Run failure, not a host fault, so only runner failure
+    // may block the project environment.
+    const environment = classifySandboxVerdict(verdict)
+    // Confinement stopping the range is the cause; a transport error seen first
+    // is only its symptom, so the diagnosis leads and the symptom is kept.
+    const diagnosis = environment?.message
+      ?? `ACP Run violated its ${facts.mode} sandbox: ${cause}${verdict.detail ? `: ${verdict.detail}` : ''}`
+    this.failure = this.failure === undefined ? diagnosis : `${diagnosis} (${this.failure})`
+    this.setState('failed')
+    this.hub.emit({ type: 'sandbox_violation', verdict })
+    if (environment !== null) this.environmentFault = environment
+  }
+
   private async sendLocked(text: string): Promise<PromptReceipt> {
     if (this.closed || this.currentState === 'closed' || this.currentState === 'failed') {
       throw new Error(`cannot send on run in state ${this.currentState}`)
@@ -287,7 +350,7 @@ export class AcpRun implements RunHandle {
       this.failure = errorMessage(error)
       this.setState('failed')
       await this.teardown()
-      throw classifyRuntimeEnvironmentError(error) ?? (error instanceof Error ? error : new Error(this.failure))
+      throw classifyRuntimeEnvironmentError(error) ?? this.environmentFault ?? (error instanceof Error ? error : new Error(this.failure))
     }
   }
 
@@ -436,6 +499,11 @@ export class AcpRun implements RunHandle {
         this.failure ??= errorMessage(error)
         this.setState('failed')
       }
+      // The range is settled, so its exit facts and drained stderr are both
+      // readable now. Await the recorded outcome rather than trusting that the
+      // `child.done` observer has already run.
+      this.processOutcome ??= await child.done.catch(() => this.processOutcome)
+      this.classifySandbox(child)
     }
     this.rangeExited = rangeExited
     const outcome = this.processOutcome
@@ -456,6 +524,7 @@ export class AcpRun implements RunHandle {
       signal: outcome?.signal ?? null,
       rangeExited,
       error: this.failure,
+      ...this.sandboxViolation === undefined ? {} : { sandboxViolation: this.sandboxViolation },
     })
     if (disposalError) throw disposalError
   }

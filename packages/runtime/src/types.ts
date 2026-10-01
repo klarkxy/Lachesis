@@ -1,4 +1,5 @@
 import type { SessionConfigOption, SessionUpdate, StopReason } from '@agentclientprotocol/sdk'
+import type { SandboxEnforcement, SandboxMode } from '@deepseek-ai/dsh-sandbox'
 
 /** Locked dsh npm train this adapter was implemented against. */
 export const DSH_VERSION = '0.1.7-alpha.2'
@@ -42,6 +43,51 @@ export type DeliveryStatus = 'none' | 'pending_acceptance'
 
 export type PermissionMode = 'defer' | 'allow-once' | 'reject-once'
 
+/**
+ * A confining mode a Run harness range may execute under. `danger-full-access`
+ * is deliberately absent: a Run that cannot be confined must fail closed, never
+ * widen itself out of the sandbox.
+ */
+export type RunSandboxMode = Exclude<SandboxMode, 'danger-full-access'>
+
+/** Every Run harness range is confined under this mode unless a caller asks for another. */
+export const DEFAULT_RUN_SANDBOX_MODE: RunSandboxMode = 'workspace-write'
+
+/** How the caller asks for this Run's harness range to be confined. */
+export interface RunSandboxSpec {
+  /**
+   * File-effect mode for the whole harness range. Default
+   * {@link DEFAULT_RUN_SANDBOX_MODE}. `read-only` denies every write the
+   * harness range attempts outside the granted root.
+   *
+   * There is deliberately no way to opt out: a Run is either confined or it is
+   * refused at startup, never spawned unconfined.
+   */
+  mode?: RunSandboxMode
+}
+
+/** What the harness range was actually confined by, and how completely. */
+export interface RunSandboxFacts {
+  mode: RunSandboxMode
+  /** The single writable root the harness range was granted. */
+  workspaceRoot: string
+  enforcement: SandboxEnforcement
+  /** The backend's own denial dialect; empty when the backend names none. */
+  denialSignatures: readonly string[]
+}
+
+/** A settled harness range that confinement stopped, or could not confine. */
+export interface RunSandboxVerdict {
+  mode: RunSandboxMode
+  enforcement: SandboxEnforcement
+  /** Confinement worked and denied a file effect. */
+  denied: boolean
+  /** The runner failed before the harness could execute at all. */
+  runnerFailed: boolean
+  /** The matching stderr line, when one identified the cause. */
+  detail: string | null
+}
+
 export interface PermissionOption {
   optionId: string
   name: string
@@ -63,6 +109,12 @@ export interface ProcessFacts {
   stderrDisposition: 'collect'
   stdoutDisposition: 'pipe'
   stdinDisposition: 'pipe'
+  /**
+   * The wrap this Run was actually spawned under. Present on every Run: a
+   * confined range is not an opt-in, so its absence would mean the spawn
+   * bypassed confinement entirely.
+   */
+  sandbox: RunSandboxFacts
 }
 
 export interface RunSpec {
@@ -90,6 +142,12 @@ export interface RunSpec {
    */
   command?: readonly string[]
   permissionMode?: PermissionMode
+  /**
+   * Spawn-time confinement for this Run's harness range. Omitting it confines
+   * under {@link DEFAULT_RUN_SANDBOX_MODE} — confinement is the default, never
+   * an opt-in.
+   */
+  sandbox?: RunSandboxSpec
 }
 
 export interface ExecutorOptions {
@@ -128,6 +186,12 @@ export interface RunOutcome {
   signal: NodeJS.Signals | null
   rangeExited: boolean
   error?: string
+  /**
+   * Set when confinement denied the harness range, or the runner itself failed.
+   * Present even for an otherwise clean exit, so a killed range is never
+   * reported as ordinary completion.
+   */
+  sandboxViolation?: RunSandboxVerdict
 }
 
 export type RunEvent =
@@ -144,6 +208,7 @@ export type RunEvent =
     }
   | { type: 'prompt_ended'; stopReason: StopReason }
   | { type: 'log'; stream: 'stderr'; text: string }
+  | { type: 'sandbox_violation'; verdict: RunSandboxVerdict }
   | { type: 'process_exit'; exitCode: number | null; signal: NodeJS.Signals | null; rangeExited: boolean }
 
 export type PermissionAnswer =

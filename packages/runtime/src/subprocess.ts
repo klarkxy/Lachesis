@@ -1,5 +1,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
+import LocalSandboxProvider from '@deepseek-ai/dsh-sandbox-local'
+import { type ConfinedArgv, type SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
 import type { SubprocessHandle, SubprocessRuntime, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { access } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
@@ -16,8 +18,10 @@ export async function requireNativeWindowsJob(): Promise<void> {
 }
 
 /**
- * Tiny Cordis host that only mounts `LocalSubprocessRuntime`.
- * Service disposal terminates every still-owned managed range (Windows Job / POSIX group).
+ * Tiny Cordis host that owns `LocalSubprocessRuntime` and the confinement
+ * decision made for every spawn (`LocalSandboxProvider`).
+ * Service disposal terminates every still-owned managed range (Windows Job / POSIX
+ * group), and on the windows-acl rung also revokes the private temp grants it made.
  */
 export class SubprocessHost {
   private context: Context | undefined
@@ -41,9 +45,24 @@ export class SubprocessHost {
     await requireNativeWindowsJob()
     const context = new Context()
     await context.plugin(LocalSubprocessRuntime)
+    // One provider for the host's lifetime: the windows-acl rung caches its
+    // standing workspace grant, so repeated wraps of the same workspace stay O(1).
+    await context.plugin(LocalSandboxProvider)
     this.context = context
     this.subprocessService = context.subprocess
     return this.subprocessService
+  }
+
+  /**
+   * Wrap `argv` so the spawned range is confined under `policy`. The provider
+   * fails closed: a host with no usable runner throws the fail-closed
+   * `SANDBOX_UNAVAILABLE` error rather than returning the caller's argv, so an
+   * unconfined spawn is not reachable from here.
+   */
+  async confine(argv: readonly string[], policy: SandboxPolicy, signal?: AbortSignal): Promise<ConfinedArgv> {
+    const context = this.context
+    if (context === undefined) throw new Error('subprocess host is not started')
+    return await context.sandbox.confine(argv, policy, signal)
   }
 
   spawn(spec: SubprocessSpawnSpec): SubprocessHandle {

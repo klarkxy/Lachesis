@@ -370,6 +370,11 @@ export class RunSupervisor {
       await observed
       this.domain.recordRunEvent(worker, run.id, generation, 'run.process_exit', { rangeExited: outcome.rangeExited })
       if (!outcome.rangeExited) throw new Error('Worker process range did not exit')
+      // Confinement stopped the range, so whatever it managed to leave in the
+      // workspace is untrusted and must never become a delivery.
+      if (outcome.sandboxViolation) {
+        throw new Error(outcome.error ?? `Worker violated its ${outcome.sandboxViolation.mode} sandbox`)
+      }
       if (this.cancelling.has(run.id)) return
       if (this.stopping) throw new Error('Service stopped after the worker exited; unfinished work was preserved')
       if (live.environmentFailure) throw new Error(live.environmentFailure)

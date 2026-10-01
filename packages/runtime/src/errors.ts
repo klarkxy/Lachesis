@@ -1,4 +1,5 @@
 import { redactText } from './redaction.ts'
+import type { RunSandboxVerdict } from './types.ts'
 
 /** The process owner could not prove that an ACP worker range has exited. */
 export class RangeExitUnconfirmedError extends Error {
@@ -31,13 +32,24 @@ export function classifyRuntimeEnvironmentError(error: unknown): RuntimeEnvironm
     return new RuntimeEnvironmentError('sandbox_write_grant_failed',
       `dsh cannot initialize workspace-write permissions under the current execution identity. ${detail}`)
   }
-  if (/SANDBOX_UNAVAILABLE|windows-acl-run:|sandbox.*(?:initialization|setup).*failed/i.test(text)) {
+  if (/SANDBOX_UNAVAILABLE|windows-acl-run:|could not confine this Run|sandbox.*(?:initialization|setup).*failed/i.test(text)) {
     return new RuntimeEnvironmentError('sandbox_unavailable', `dsh tool confinement is unavailable. ${text}`)
   }
   if (/native Windows Job containment/i.test(text)) {
     return new RuntimeEnvironmentError('process_containment_unavailable', text)
   }
   return null
+}
+
+/**
+ * Only a runner that refused its profile is an environment fault — the host
+ * could not confine this Run. A denial is the opposite: confinement worked and
+ * caught the worker, so it is a Run failure and must never block the project.
+ */
+export function classifySandboxVerdict(verdict: RunSandboxVerdict): RuntimeEnvironmentError | null {
+  if (!verdict.runnerFailed) return null
+  const detail = verdict.detail ?? 'the sandbox runner failed before the harness could execute'
+  return new RuntimeEnvironmentError('sandbox_unavailable', `dsh could not confine this Run: ${detail}`)
 }
 
 /** Bounded error/cause traversal; redact before returning diagnostics to the service. */

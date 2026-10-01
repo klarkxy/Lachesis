@@ -5,6 +5,7 @@
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 import { Readable, Writable } from 'node:stream'
 import {
@@ -17,6 +18,7 @@ import {
 import { openInheritedControlChannel } from '@deepseek-ai/dsh-subprocess/control'
 
 const ALLOWED_EFFORTS = new Set(['', 'off', 'low', 'medium', 'high', 'max'])
+const escapeName = process.env.LACHESIS_FIXTURE_ESCAPE ?? '.lachesis-escape-probe'
 const hang = process.env.LACHESIS_FIXTURE_HANG
 const forever = () => new Promise(() => {})
 if (hang) {
@@ -217,8 +219,24 @@ const app = agent({ name: 'lachesis-acp-fixture' })
       return { stopReason: 'end_turn' }
     }
 
-    if (text.includes('PERMISSION')) {
-      const permission = await client.request(methods.client.session.requestPermission, {
+    if (text.includes('ESCAPE')) {
+      // Reach for a path outside the granted writable root and let the OS be
+      // the judge. The runner's own denial dialect lands on stderr; if the
+      // confinement is not real the write succeeds and the test cleans it up.
+      const target = join(homedir(), escapeName)
+      try {
+        writeFileSync(target, 'escaped', 'utf8')
+        process.stderr.write(`fixture escape SUCCEEDED at ${target}\n`)
+        await emit(`escape:wrote:${target}`)
+        return { stopReason: 'end_turn' }
+      } catch (error) {
+        process.stderr.write(`fixture escape blocked: ${String(error && error.message ? error.message : error)}\n`)
+        await emit('escape:blocked')
+        process.exit(3)
+      }
+    }
+
+    if (text.includes('PERMISSION')) {      const permission = await client.request(methods.client.session.requestPermission, {
         sessionId: record.sessionId,
         toolCall: { toolCallId: 'fixture-tool-1' },
         options: [
