@@ -1,0 +1,31 @@
+{
+  "name": "@lachesis/base",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "The Lachesis base bundle: the plugin composition a Lachesis service runs, as a dsh profile bundle",
+  "exports": {
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "cordis.patch.yml"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "~4.0.4"
+  },
+  "dependencies": {
+    "@deepseek-ai/cordis": "~4.0.4",
+    "@lachesis/plugin-domain": "workspace:*",
+    "@lachesis/plugin-mcp": "workspace:*",
+    "@lachesis/plugin-runtime-dsh": "workspace:*",
+    "@lachesis/plugin-scheduler": "workspace:*",
+    "@lachesis/plugin-workspace": "workspace:*",
+    "@lachesis/server": "workspace:*"
+  }
+}

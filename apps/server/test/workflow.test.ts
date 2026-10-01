@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { test } from 'node:test'
 import type { Application, Issue, Profile, Project } from '@lachesis/contracts'
-import type { DshAcpExecutor, RunEvent, RunHandle, RunSpec } from '@lachesis/runtime'
+import type { DshAcpExecutor, RunEvent, RunHandle, RunSpec } from '@lachesis/plugin-runtime-dsh'
 import { LachesisApplication } from '../src/application.ts'
 
 const browser = { kind: 'browser' as const, id: 'test-operator', projectIds: null, permissions: null }

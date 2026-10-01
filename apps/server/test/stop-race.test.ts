@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import { test } from 'node:test'
-import type { DshAcpExecutor } from '@lachesis/runtime'
+import type { DshAcpExecutor } from '@lachesis/plugin-runtime-dsh'
 import { LachesisApplication } from '../src/application.ts'
 
 test('shutdown during workspace preparation never starts a worker afterward', { timeout: 15_000 }, async () => {

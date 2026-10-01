@@ -1,5 +1,6 @@
-import { isAbsolute, join, relative } from 'node:path'
+import { isAbsolute, relative } from 'node:path'
 import { realpath, stat } from 'node:fs/promises'
+import { Context } from '@deepseek-ai/cordis'
 import type {
   CreateIssueInput,
   CreateProfileInput,
@@ -10,17 +11,16 @@ import type {
   SchedulerSettings,
   UpdateIssuePlanInput,
 } from '@lachesis/contracts'
-import { openDomain, type DomainService, type IdempotencyRef } from '@lachesis/domain'
+import type { DomainService, IdempotencyRef } from '@lachesis/plugin-domain'
+import LachesisDomain from '@lachesis/plugin-domain/plugin'
+import { RangeExitUnconfirmedError, type DshAcpExecutor } from '@lachesis/plugin-runtime-dsh'
+import LachesisHarnessDsh from '@lachesis/plugin-runtime-dsh/plugin'
+import { ApplicationError, RunSupervisor } from '@lachesis/plugin-scheduler'
+import LachesisScheduler from '@lachesis/plugin-scheduler/plugin'
+import LachesisWorkspace from '@lachesis/plugin-workspace/plugin'
 import type { Actor as AuthActor } from './auth.js'
-import { RunSupervisor } from './supervisor.js'
-import { DataRootLease } from './instance.js'
-import { RangeExitUnconfirmedError, type DshAcpExecutor } from '@lachesis/runtime'
 
-export class ApplicationError extends Error {
-  constructor(public readonly code: string, public readonly status: number, message: string) {
-    super(message)
-  }
-}
+export { ApplicationError }
 
 export interface OperationContext {
   actor: AuthActor
@@ -30,6 +30,24 @@ export interface OperationContext {
 export interface OperationInvoker {
   invoke(operation: string, input: Record<string, unknown>, context: OperationContext): Promise<unknown>
 }
+
+/** The plugin-provided services the application dispatches every operation through. */
+export interface ApplicationServices {
+  domain: DomainService
+  supervisor: RunSupervisor
+  dataRoot: string
+  /**
+   * Close the database and release the data-root claim. Called only when the
+   * shutdown could confirm every worker process range exited.
+   */
+  release(): Promise<void>
+  /**
+   * Keep the data-root claim for the rest of the process. A second service must
+   * not be allowed to recover the database while a worker range may still live.
+   */
+  retain(): void
+}
+
 
 function text(input: Record<string, unknown>, key: string): string {
   const value = input[key]
@@ -56,28 +74,56 @@ export class LachesisApplication implements OperationInvoker {
   private operationRangeUnconfirmed = false
   private closing: Promise<void> | null = null
 
+  /**
+   * Compose the plugin stack privately and open the application on it. This is
+   * the path embedders take — the tests, the MCP stdio bridge, the data-root
+   * lease contender — and it builds the same services the HTTP service consumes
+   * from the launch profile, so both paths exercise one wiring.
+   */
   static async open(dataRoot: string, runtime?: DshAcpExecutor): Promise<LachesisApplication> {
-    const lease = await DataRootLease.acquire(dataRoot)
+    const ctx = new Context()
     try {
-      return new LachesisApplication(lease, runtime)
+      // The harness loads first so an embedder can substitute a controlled
+      // executor before the scheduler resolves one.
+      await ctx.plugin(LachesisHarnessDsh, {})
+      if (runtime) {
+        const harness = ctx.get('lachesis.harness.dsh')
+        if (!harness) throw new Error('lachesis.harness.dsh is unavailable')
+        harness.override(runtime)
+      }
+      await ctx.plugin(LachesisDomain, { dataRoot })
+      await ctx.plugin(LachesisWorkspace, { dataRoot })
+      await ctx.plugin(LachesisScheduler, { dataRoot })
     } catch (error) {
-      await lease.release()
+      await ctx.fiber.dispose().catch(() => {})
       throw error
     }
+    const lease = ctx.get('lachesis.dataRoot')
+    const domain = ctx.get('lachesis.domain')
+    const supervisor = ctx.get('lachesis.scheduler')
+    if (!lease) throw new Error('lachesis.dataRoot is unavailable')
+    if (!domain) throw new Error('lachesis.domain is unavailable')
+    if (!supervisor) throw new Error('lachesis.scheduler is unavailable')
+    return new LachesisApplication({
+      domain,
+      supervisor,
+      dataRoot: lease.dataRoot,
+      retain: () => lease.retain(),
+      release: () => ctx.fiber.dispose(),
+    })
   }
 
-  private constructor(private readonly lease: DataRootLease, runtime?: DshAcpExecutor) {
-    const domain = openDomain(join(lease.dataRoot, 'lachesis.sqlite'))
-    try {
-      this.supervisor = new RunSupervisor(domain, lease.dataRoot, runtime)
-      this.domain = domain
-    } catch (error) {
-      domain.close()
-      throw error
-    }
+  /** Bind an application to services a surrounding context already provides. */
+  static fromServices(services: ApplicationServices): LachesisApplication {
+    return new LachesisApplication(services)
   }
 
-  get dataRoot(): string { return this.lease.dataRoot }
+  private constructor(private readonly services: ApplicationServices) {
+    this.domain = services.domain
+    this.supervisor = services.supervisor
+  }
+
+  get dataRoot(): string { return this.services.dataRoot }
 
   start(): void {
     this.supervisor.start()
@@ -86,17 +132,22 @@ export class LachesisApplication implements OperationInvoker {
   async close(): Promise<void> {
     this.stopping = true
     this.closing ??= (async () => {
-      // Keep the process-lifetime lease if range shutdown failed. Releasing it
-      // would let a second service recover the database while an old Job may live.
       let failure: unknown
       try { await this.supervisor.stop() } catch (error) { failure = error }
       // Preparation, application and verification may outlive an HTTP client.
       // Keep both the database and the process lease until accepted work settles.
       await Promise.allSettled([...this.operations])
-      if (this.operationRangeUnconfirmed) throw new RangeExitUnconfirmedError('Verification process exit is unconfirmed; the data lease is retained')
-      if (failure) throw failure
-      try { this.domain.close() }
-      finally { await this.lease.release() }
+      // Keep the process-lifetime lease if range shutdown failed. Releasing it
+      // would let a second service recover the database while an old Job may live.
+      if (this.operationRangeUnconfirmed) {
+        this.services.retain()
+        throw new RangeExitUnconfirmedError('Verification process exit is unconfirmed; the data lease is retained')
+      }
+      if (failure) {
+        this.services.retain()
+        throw failure
+      }
+      await this.services.release()
     })()
     await this.closing
   }

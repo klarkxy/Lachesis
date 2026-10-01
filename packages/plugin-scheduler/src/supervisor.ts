@@ -2,11 +2,11 @@ import { randomUUID } from 'node:crypto'
 import { copyFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Evidence, Issue, Run, RunCheckpoint } from '@lachesis/contracts'
-import { DomainError, ErrorCode, type Claim, type DomainService } from '@lachesis/domain'
-import { ACP_REASONING_CONFIG_ID, DshAcpRuntime, RangeExitUnconfirmedError, RuntimeEnvironmentError, classifyRuntimeEnvironmentError, type DshAcpExecutor, type RunEvent, type RunHandle } from '@lachesis/runtime'
-import { Workspace } from '@lachesis/workspace'
-import { ApplicationError } from './application.js'
-import { visibleAssistantReply } from './response.js'
+import { DomainError, ErrorCode, type Claim, type DomainService } from '@lachesis/plugin-domain'
+import { ACP_REASONING_CONFIG_ID, RangeExitUnconfirmedError, RuntimeEnvironmentError, classifyRuntimeEnvironmentError, type DshAcpExecutor, type RunEvent, type RunHandle } from '@lachesis/plugin-runtime-dsh'
+import { Workspace } from '@lachesis/plugin-workspace'
+import { ApplicationError } from './errors.ts'
+import { visibleAssistantReply } from './response.ts'
 
 const worker = { kind: 'worker' as const, id: 'lachesis-supervisor' }
 
@@ -63,6 +63,9 @@ function promptFor(issue: Issue): string {
 
 /** Owns Run process ranges and the boundary between live work and immutable delivery. */
 export class RunSupervisor {
+  private readonly domain: DomainService
+  private readonly dataRoot: string
+  private readonly tickIntervalMs: number
   readonly workspace: Workspace
   private readonly runtime: DshAcpExecutor
   private readonly active = new Map<string, ActiveRun>()
@@ -75,14 +78,31 @@ export class RunSupervisor {
   private ticking = false
   private stopping = false
 
-  constructor(private readonly domain: DomainService, private readonly dataRoot: string, runtime?: DshAcpExecutor) {
-    this.workspace = new Workspace({ storeRoot: join(dataRoot, 'artifacts') })
-    this.runtime = runtime ?? new DshAcpRuntime({ bindProcessExit: false })
+  /**
+   * @param workspace — the process-wide Workspace; a second instance would stop
+   *   excluding the first on the in-memory project target lock.
+   * @param dataRoot — the service data directory, for Run dsh homes and probes.
+   * @param runtime — the harness executor, supplied by the caller so the
+   *   scheduler never imports a concrete harness.
+   * @param tickIntervalMs — how often to look for newly ready Issues.
+   */
+  constructor(
+    domain: DomainService,
+    workspace: Workspace,
+    dataRoot: string,
+    runtime: DshAcpExecutor,
+    tickIntervalMs = 1_000,
+  ) {
+    this.domain = domain
+    this.workspace = workspace
+    this.dataRoot = dataRoot
+    this.runtime = runtime
+    this.tickIntervalMs = tickIntervalMs
   }
 
   start(): void {
     if (this.timer || this.stopping) return
-    this.timer = setInterval(() => this.wake(), 1_000)
+    this.timer = setInterval(() => this.wake(), this.tickIntervalMs)
     this.timer.unref()
     this.wake()
   }

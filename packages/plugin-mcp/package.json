@@ -1,12 +1,17 @@
 {
-  "name": "@lachesis/mcp",
+  "name": "@lachesis/plugin-mcp",
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "description": "Cordis plugin mounting the Lachesis Model Context Protocol endpoint",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./plugin": {
+      "types": "./dist/plugin.d.ts",
+      "default": "./dist/plugin.js"
     }
   },
   "scripts": {
@@ -15,6 +20,9 @@
     "test": "node --import tsx --test test/*.test.ts"
   },
   "dependencies": {
+    "@deepseek-ai/cordis": "~4.0.4",
+    "@deepseek-ai/dsh-host-webserver": "0.1.7-alpha.2",
+    "@deepseek-ai/schemastery": "~3.18.4",
     "@modelcontextprotocol/node": "2.0.0",
     "@modelcontextprotocol/server": "2.0.0",
     "zod": "^4.6.5"

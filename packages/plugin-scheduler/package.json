@@ -1,9 +1,9 @@
 {
-  "name": "@lachesis/workspace",
+  "name": "@lachesis/plugin-scheduler",
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "Lachesis isolated run workspaces, immutable delivery artifacts, git three-way integration, and explicit local apply",
+  "description": "Cordis plugin exposing the Lachesis Run scheduler: claims ready Issues and runs them through the injected harness",
   "engines": {
     "node": ">=24"
   },
@@ -11,12 +11,15 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./plugin": {
+      "types": "./dist/plugin.d.ts",
+      "import": "./dist/plugin.js"
     }
   },
   "files": [
     "dist",
-    "src",
-    "README.md"
+    "src"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -25,7 +28,12 @@
     "test": "node --test --experimental-strip-types --test-concurrency=1 --test-reporter spec ./test/*.test.ts"
   },
   "dependencies": {
-    "@lachesis/contracts": "workspace:*"
+    "@deepseek-ai/cordis": "~4.0.4",
+    "@deepseek-ai/schemastery": "~3.18.4",
+    "@lachesis/contracts": "workspace:*",
+    "@lachesis/plugin-domain": "workspace:*",
+    "@lachesis/plugin-runtime-dsh": "workspace:*",
+    "@lachesis/plugin-workspace": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.5.2",

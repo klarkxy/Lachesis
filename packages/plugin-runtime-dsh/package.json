@@ -1,9 +1,9 @@
 {
-  "name": "@lachesis/runtime",
+  "name": "@lachesis/plugin-runtime-dsh",
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "Lachesis dsh 0.1.7-alpha.2 ACP execution adapter",
+  "description": "Cordis plugin exposing the Lachesis dsh 0.1.7-alpha.2 ACP execution adapter as the lachesis.harness.dsh service",
   "engines": {
     "node": ">=22"
   },
@@ -11,6 +11,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./plugin": {
+      "types": "./dist/plugin.d.ts",
+      "import": "./dist/plugin.js"
     }
   },
   "files": [
@@ -26,6 +30,7 @@
   "dependencies": {
     "@agentclientprotocol/sdk": "1.4.0",
     "@deepseek-ai/cordis": "~4.0.4",
+    "@deepseek-ai/schemastery": "~3.18.4",
     "@deepseek-ai/dsh": "0.1.7-alpha.2",
     "@deepseek-ai/dsh-http-proxy": "0.1.7-alpha.2",
     "@deepseek-ai/dsh-subprocess": "0.1.7-alpha.2",

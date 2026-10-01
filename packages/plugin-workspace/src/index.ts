@@ -1,5 +1,7 @@
 export { Workspace } from './workspace.ts'
 export { WorkspaceError, isWorkspaceError } from './errors.ts'
+export { LachesisWorkspace, type Config as LachesisWorkspaceConfig } from './plugin.ts'
+export { default } from './plugin.ts'
 export { isSensitivePath } from './filter.ts'
 export { parseArgv, spawnArgv } from './spawn.ts'
 export { assertAbsolutePath, assertRelativePosix, assertSafeId, isInside } from './paths.ts'

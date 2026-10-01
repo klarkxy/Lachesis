@@ -1,4 +1,5 @@
 export { createDshAcpExecutor, DshAcpRuntime } from './executor.ts'
+export { LachesisHarnessDsh, type Config as LachesisHarnessDshConfig } from './plugin.ts'
 export { RangeExitUnconfirmedError } from './errors.ts'
 export { RuntimeEnvironmentError, classifyRuntimeEnvironmentError, classifySandboxVerdict } from './errors.ts'
 export { disposeAcpChild, SubprocessHost } from './subprocess.ts'
@@ -34,3 +35,4 @@ export type {
   RunState,
   RuntimeReadiness,
 } from './types.ts'
+export { default } from './plugin.ts'

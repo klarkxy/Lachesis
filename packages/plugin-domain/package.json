@@ -1,9 +1,9 @@
 {
-  "name": "@lachesis/domain",
+  "name": "@lachesis/plugin-domain",
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Persistent Lachesis domain service backed by Node 24 node:sqlite",
+  "description": "Cordis plugin exposing the persistent Lachesis domain service backed by Node 24 node:sqlite",
   "engines": {
     "node": ">=24.16.0"
   },
@@ -11,6 +11,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./plugin": {
+      "types": "./dist/plugin.d.ts",
+      "import": "./dist/plugin.js"
     }
   },
   "files": [
@@ -24,6 +28,8 @@
     "test": "node --test --experimental-strip-types --test-concurrency=1 --test-reporter spec ./test/*.test.ts"
   },
   "dependencies": {
+    "@deepseek-ai/cordis": "~4.0.4",
+    "@deepseek-ai/schemastery": "~3.18.4",
     "@lachesis/contracts": "workspace:*"
   }
 }

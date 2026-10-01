@@ -3,11 +3,24 @@ import { mkdirSync, realpathSync } from 'node:fs'
 import { createServer, type Server } from 'node:net'
 import { resolve } from 'node:path'
 
-/** A process-lifetime claim on one canonical Lachesis data directory. */
+/**
+ * A process-lifetime claim on one canonical Lachesis data directory.
+ *
+ * The lease is taken before the database is opened, so a second service can
+ * never touch the files of a live one. `retain()` keeps the claim held for the
+ * rest of the process: releasing it would let a second service recover the
+ * database while a worker process range may still be alive.
+ */
 export class DataRootLease {
+  readonly dataRoot: string
+  private readonly server: Server
   private closed = false
+  private retained = false
 
-  private constructor(readonly dataRoot: string, private readonly server: Server) {}
+  private constructor(dataRoot: string, server: Server) {
+    this.dataRoot = dataRoot
+    this.server = server
+  }
 
   static async acquire(dataRoot: string): Promise<DataRootLease> {
     mkdirSync(dataRoot, { recursive: true })
@@ -39,8 +52,18 @@ export class DataRootLease {
     return new DataRootLease(canonical, server)
   }
 
+  /** Whether a shutdown path decided this claim must outlive the process. */
+  get isRetained(): boolean { return this.retained }
+
+  /**
+   * Keep the claim held for the rest of the process. Used when worker range
+   * exit is unconfirmed: a second service must not be allowed to recover the
+   * database while an orphaned worker may still be writing to it.
+   */
+  retain(): void { this.retained = true }
+
   async release(): Promise<void> {
-    if (this.closed) return
+    if (this.closed || this.retained) return
     this.closed = true
     await new Promise<void>((done, reject) => {
       this.server.close((error) => error ? reject(error) : done())

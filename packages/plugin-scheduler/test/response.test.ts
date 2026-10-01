@@ -7,3 +7,5 @@ test('delivery reply excludes provider thinking blocks and keeps final report', 
   assert.equal(visibleAssistantReply('<think>one</think><think>two</think>Answer'), 'Answer')
   assert.equal(visibleAssistantReply('<analysis>partial'), '')
 })
+
+

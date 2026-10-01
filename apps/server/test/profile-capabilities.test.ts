@@ -3,10 +3,11 @@ import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import type { DshAcpExecutor, RunHandle, RunSpec } from '@lachesis/runtime'
-import { openDomain } from '@lachesis/domain'
+import type { DshAcpExecutor, RunHandle, RunSpec } from '@lachesis/plugin-runtime-dsh'
+import { openDomain } from '@lachesis/plugin-domain'
 import { ApplicationError, LachesisApplication } from '../src/application.ts'
-import { RunSupervisor } from '../src/supervisor.ts'
+import { RunSupervisor } from '@lachesis/plugin-scheduler'
+import { Workspace } from '@lachesis/plugin-workspace'
 
 const browser = { kind: 'browser' as const, id: 'operator', projectIds: null, permissions: null }
 const token = { kind: 'token' as const, id: 'client', projectIds: [], permissions: ['*'] }
@@ -146,7 +147,7 @@ test('unconfirmed Profile probe exit blocks another probe until service restart'
     },
     async closeAll() {},
   }
-  const supervisor = new RunSupervisor(domain, root, runtime)
+  const supervisor = new RunSupervisor(domain, new Workspace({ storeRoot: join(root, 'artifacts') }), root, runtime)
   try {
     await assert.rejects(supervisor.probeProfileCapabilities('p', 'm'),
       (error) => error instanceof ApplicationError && error.code === 'range_unconfirmed')
