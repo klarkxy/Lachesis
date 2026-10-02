@@ -1,0 +1,53 @@
+# The Lachesis base bundle: the service's own plugin composition, applied as one
+# insert over the empty profile root. The launcher adds a later patch layer that
+# replaces these rows' whole `config` with the values of the run it is starting
+# (the resolved data root, the static web root, the launch id), so this layer
+# holds the shipped defaults and the stable plugin set rather than per-run paths.
+#
+# Row order carries no load semantics — activation is service-availability
+# driven, so `lachesis.scheduler` waits for the domain, workspace and harness
+# rows and `lachesis.mcp` waits for the HTTP service.
+
+- insert:
+    # The data-root claim and the SQLite domain service behind it. The claim is
+    # taken before the database opens, so a second service on the same directory
+    # fails without touching a live one.
+    - id: lachesis-domain
+      name: '@lachesis/plugin-domain'
+      config:
+        dataRoot: .lachesis
+        busyTimeoutMs: 5000
+
+    # The one process-wide Workspace. A second instance would stop excluding the
+    # first on the in-memory project target lock, so this row is never duplicated.
+    - id: lachesis-workspace
+      name: '@lachesis/plugin-workspace'
+      config:
+        dataRoot: .lachesis
+
+    # The dsh ACP harness. Phase 1 ships exactly one supported harness; the
+    # scheduler itself is harness-neutral.
+    - id: lachesis-harness-dsh
+      name: '@lachesis/plugin-runtime-dsh'
+      config:
+        version: 0.1.7-alpha.2
+        bindProcessExit: false
+
+    # Claims ready Issues and runs them through the injected harness.
+    - id: lachesis-scheduler
+      name: '@lachesis/plugin-scheduler'
+      config:
+        dataRoot: .lachesis
+        tickIntervalMs: 1000
+
+    # The HTTP service: browser API, session pairing and the SPA fallback. The
+    # launcher replaces `staticRoot` and `launchId` per run.
+    - id: lachesis-server
+      name: '@lachesis/server'
+      config: {}
+
+    # The Model Context Protocol endpoint, a second encoding of the same
+    # operations the browser UI calls.
+    - id: lachesis-mcp
+      name: '@lachesis/plugin-mcp'
+      config: {}

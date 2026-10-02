@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import { test } from 'node:test'
-import { RangeExitUnconfirmedError, type DshAcpExecutor, type RunHandle } from '@lachesis/runtime'
+import { RangeExitUnconfirmedError, type DshAcpExecutor, type RunHandle } from '@lachesis/plugin-runtime-dsh'
 import { LachesisApplication } from '../src/application.ts'
 
 for (const rangeExited of [true, false] as const) test(

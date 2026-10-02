@@ -39,18 +39,21 @@ importers:
       '@lachesis/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
-      '@lachesis/domain':
+      '@lachesis/plugin-domain':
         specifier: workspace:*
-        version: link:../../packages/domain
-      '@lachesis/mcp':
+        version: link:../../packages/plugin-domain
+      '@lachesis/plugin-mcp':
         specifier: workspace:*
-        version: link:../../packages/mcp
-      '@lachesis/runtime':
+        version: link:../../packages/plugin-mcp
+      '@lachesis/plugin-runtime-dsh':
         specifier: workspace:*
-        version: link:../../packages/runtime
-      '@lachesis/workspace':
+        version: link:../../packages/plugin-runtime-dsh
+      '@lachesis/plugin-scheduler':
         specifier: workspace:*
-        version: link:../../packages/workspace
+        version: link:../../packages/plugin-scheduler
+      '@lachesis/plugin-workspace':
+        specifier: workspace:*
+        version: link:../../packages/plugin-workspace
     devDependencies:
       tsx:
         specifier: ^4.20.0
@@ -96,16 +99,55 @@ importers:
         specifier: ^5.4.8
         version: 5.4.21(@types/node@24.13.6)
 
+  packages/base:
+    dependencies:
+      '@deepseek-ai/cordis':
+        specifier: ~4.0.4
+        version: 4.0.4(@deepseek-ai/cordis-plugin-include@1.0.9)(@deepseek-ai/cordis-plugin-loader@1.0.5)
+      '@lachesis/plugin-domain':
+        specifier: workspace:*
+        version: link:../plugin-domain
+      '@lachesis/plugin-mcp':
+        specifier: workspace:*
+        version: link:../plugin-mcp
+      '@lachesis/plugin-runtime-dsh':
+        specifier: workspace:*
+        version: link:../plugin-runtime-dsh
+      '@lachesis/plugin-scheduler':
+        specifier: workspace:*
+        version: link:../plugin-scheduler
+      '@lachesis/plugin-workspace':
+        specifier: workspace:*
+        version: link:../plugin-workspace
+      '@lachesis/server':
+        specifier: workspace:*
+        version: link:../../apps/server
+
   packages/contracts: {}
 
-  packages/domain:
+  packages/plugin-domain:
     dependencies:
+      '@deepseek-ai/cordis':
+        specifier: ~4.0.4
+        version: 4.0.4(@deepseek-ai/cordis-plugin-include@1.0.9)(@deepseek-ai/cordis-plugin-loader@1.0.5)
+      '@deepseek-ai/schemastery':
+        specifier: ~3.18.4
+        version: 3.18.4
       '@lachesis/contracts':
         specifier: workspace:*
         version: link:../contracts
 
-  packages/mcp:
+  packages/plugin-mcp:
     dependencies:
+      '@deepseek-ai/cordis':
+        specifier: ~4.0.4
+        version: 4.0.4(@deepseek-ai/cordis-plugin-include@1.0.9)(@deepseek-ai/cordis-plugin-loader@1.0.5)
+      '@deepseek-ai/dsh-host-webserver':
+        specifier: 0.1.7-alpha.2
+        version: 0.1.7-alpha.2(@deepseek-ai/cordis@4.0.4)
+      '@deepseek-ai/schemastery':
+        specifier: ~3.18.4
+        version: 3.18.4
       '@modelcontextprotocol/node':
         specifier: 2.0.0
         version: 2.0.0(@modelcontextprotocol/server@2.0.0)(hono@4.13.8)
@@ -129,7 +171,7 @@ importers:
         specifier: ^5.9.2
         version: 5.9.3
 
-  packages/runtime:
+  packages/plugin-runtime-dsh:
     dependencies:
       '@agentclientprotocol/sdk':
         specifier: 1.4.0
@@ -179,6 +221,9 @@ importers:
       '@deepseek-ai/dsh-win32-process':
         specifier: 0.1.7-alpha.2
         version: 0.1.7-alpha.2(@deepseek-ai/cordis@4.0.4)
+      '@deepseek-ai/schemastery':
+        specifier: ~3.18.4
+        version: 3.18.4
       zod:
         specifier: ^4.1.5
         version: 4.6.5
@@ -193,8 +238,42 @@ importers:
         specifier: ^5.9.2
         version: 5.9.3
 
-  packages/workspace:
+  packages/plugin-scheduler:
     dependencies:
+      '@deepseek-ai/cordis':
+        specifier: ~4.0.4
+        version: 4.0.4(@deepseek-ai/cordis-plugin-include@1.0.9)(@deepseek-ai/cordis-plugin-loader@1.0.5)
+      '@deepseek-ai/schemastery':
+        specifier: ~3.18.4
+        version: 3.18.4
+      '@lachesis/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@lachesis/plugin-domain':
+        specifier: workspace:*
+        version: link:../plugin-domain
+      '@lachesis/plugin-runtime-dsh':
+        specifier: workspace:*
+        version: link:../plugin-runtime-dsh
+      '@lachesis/plugin-workspace':
+        specifier: workspace:*
+        version: link:../plugin-workspace
+    devDependencies:
+      '@types/node':
+        specifier: ^24.5.2
+        version: 24.13.6
+      typescript:
+        specifier: ^5.9.2
+        version: 5.9.3
+
+  packages/plugin-workspace:
+    dependencies:
+      '@deepseek-ai/cordis':
+        specifier: ~4.0.4
+        version: 4.0.4(@deepseek-ai/cordis-plugin-include@1.0.9)(@deepseek-ai/cordis-plugin-loader@1.0.5)
+      '@deepseek-ai/schemastery':
+        specifier: ~3.18.4
+        version: 3.18.4
       '@lachesis/contracts':
         specifier: workspace:*
         version: link:../contracts
@@ -4624,7 +4703,7 @@ snapshots:
       '@aws-sdk/types': 3.974.5
       '@smithy/core': 3.34.1
       '@smithy/fetch-http-handler': 5.8.0
-      '@smithy/node-http-handler': 4.7.3
+      '@smithy/node-http-handler': 4.12.1
       '@smithy/types': 4.18.0
       tslib: 2.8.1
 

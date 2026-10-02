@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import type { Issue, Profile, Project, ProjectDispatchState, SchedulerSnapshot, RunCheckpoint } from '@lachesis/contracts'
-import type { DshAcpExecutor, RunHandle, RunOutcome, RunSpec } from '@lachesis/runtime'
+import type { DshAcpExecutor, RunHandle, RunOutcome, RunSpec } from '@lachesis/plugin-runtime-dsh'
 import { LachesisApplication } from '../src/application.ts'
 
 const actor = { kind: 'browser' as const, id: 'scheduler-test', projectIds: null, permissions: null }

@@ -1,11 +1,15 @@
 {
-  "name": "@lachesis/server",
+  "name": "@lachesis/plugin-mcp",
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "The Lachesis browser service: session pairing, the JSON API, and the SPA fallback over the plugin-provided operations",
+  "description": "Cordis plugin mounting the Lachesis Model Context Protocol endpoint",
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./plugin": {
       "types": "./dist/plugin.d.ts",
       "default": "./dist/plugin.js"
     }
@@ -19,14 +23,14 @@
     "@deepseek-ai/cordis": "~4.0.4",
     "@deepseek-ai/dsh-host-webserver": "0.1.7-alpha.2",
     "@deepseek-ai/schemastery": "~3.18.4",
-    "@lachesis/contracts": "workspace:*",
-    "@lachesis/plugin-domain": "workspace:*",
-    "@lachesis/plugin-mcp": "workspace:*",
-    "@lachesis/plugin-runtime-dsh": "workspace:*",
-    "@lachesis/plugin-scheduler": "workspace:*",
-    "@lachesis/plugin-workspace": "workspace:*"
+    "@modelcontextprotocol/node": "2.0.0",
+    "@modelcontextprotocol/server": "2.0.0",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
-    "tsx": "^4.20.0"
+    "@modelcontextprotocol/client": "2.0.0",
+    "@types/node": "^24.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.2"
   }
 }

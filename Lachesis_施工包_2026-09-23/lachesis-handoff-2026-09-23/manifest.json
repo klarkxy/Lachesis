@@ -1,0 +1,73 @@
+{
+  "project": "Lachesis",
+  "version": "0.2",
+  "date": "2026-09-23",
+  "branding_rule": "Legacy design-direction naming is documentation-only; product naming and non-document assets use Lachesis.",
+  "files": [
+    {
+      "path": "AGENTS.md",
+      "size": 2229,
+      "sha256": "779b957178a1bde198bb98ce17579dbe66076a33191bb51e86408f466be895f5"
+    },
+    {
+      "path": "Lachesis_统一施工说明.html",
+      "size": 66750,
+      "sha256": "e28052567ce4f5a665abd508c70dca0f5b18d87690fa23a6c7a996a628c98888"
+    },
+    {
+      "path": "Lachesis_统一施工说明.md",
+      "size": 45566,
+      "sha256": "6f900f3bfde44e145ae249ac4c80fec8673c55a828ff97d1097b19d8ff1e1e6d"
+    },
+    {
+      "path": "README.md",
+      "size": 3463,
+      "sha256": "aeaef3b4c3b51b36343e98a14fd46b471fb10104bb910cc248f7b04a8e068011"
+    },
+    {
+      "path": "docs/00_冻结决策.md",
+      "size": 4675,
+      "sha256": "d6be06345f262610fc10a0ecf7653b8ab1aac46630e1e1ddff2ca76cb999b262"
+    },
+    {
+      "path": "docs/01_产品与范围.md",
+      "size": 4173,
+      "sha256": "98c5fce9861e93bd940d20415bb7e4081ee91203b86b4f4461797546e0a535ba"
+    },
+    {
+      "path": "docs/02_架构建议.md",
+      "size": 7214,
+      "sha256": "b97c20af0ecdf63ea30ef0ff30ef75332093437f1752cf68f6480f2b0a598c51"
+    },
+    {
+      "path": "docs/03_数据与接口建议.md",
+      "size": 6715,
+      "sha256": "473e0168d326ccbde00696c31177fd71f207fdec99dee4c85dec52ce89682134"
+    },
+    {
+      "path": "docs/04_UI与原型纠偏.md",
+      "size": 6079,
+      "sha256": "eb20b0d2ca6eed44d877240a8619b544d5cc79f146cfdd2500c1f379be233f90"
+    },
+    {
+      "path": "docs/05_施工计划与验收.md",
+      "size": 5642,
+      "sha256": "6467977927ccd6216efc34e3c6638393db30da3533170190f9569103fa3a8ba2"
+    },
+    {
+      "path": "docs/06_参考与待定.md",
+      "size": 4504,
+      "sha256": "632ee17dd7e68e2537558fc5f64a3c45b1abe6d2b5952cb7c43c42b597e3325d"
+    },
+    {
+      "path": "references/05_avatar_style_reference.png",
+      "size": 1752401,
+      "sha256": "3bb96e4e6fe32d3dde15f822bc3a2f8fbdffc2048244efa4142fa86f23bee434"
+    },
+    {
+      "path": "references/README.md",
+      "size": 593,
+      "sha256": "19b569df65e920758d942d6f643bb6c725ce4210957d3e070a308dc816970322"
+    }
+  ]
+}

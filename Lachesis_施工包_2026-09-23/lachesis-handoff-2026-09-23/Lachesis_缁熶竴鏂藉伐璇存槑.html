@@ -1,0 +1,1396 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>Lachesis �� ������������������</title>
+  <style>
+    html {
+      color: #1a1a1a;
+      background-color: #fdfdfd;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        background-color: white;
+      }
+      body {
+        background-color: transparent;
+        color: black;
+        font-size: 12pt;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a {
+      color: #1a1a1a;
+    }
+    a:visited {
+      color: #1a1a1a;
+    }
+    img {
+      max-width: 100%;
+    }
+    svg {
+      height: auto;
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid #e6e6e6;
+      color: #606060;
+    }
+    code {
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      background-color: #1a1a1a;
+      border: none;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid #1a1a1a;
+      border-bottom: 1px solid #1a1a1a;
+    }
+    th {
+      border-top: 1px solid #1a1a1a;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+    /* CSS for syntax highlighting */
+    pre > code.sourceCode { white-space: pre; position: relative; }
+    pre > code.sourceCode > span { line-height: 1.25; }
+    pre > code.sourceCode > span:empty { height: 1.2em; }
+    .sourceCode { overflow: visible; }
+    code.sourceCode > span { color: inherit; text-decoration: inherit; }
+    div.sourceCode { margin: 1em 0; }
+    pre.sourceCode { margin: 0; }
+    @media screen {
+    div.sourceCode { overflow: auto; }
+    }
+    @media print {
+    pre > code.sourceCode { white-space: pre-wrap; }
+    pre > code.sourceCode > span { display: inline-block; text-indent: -5em; padding-left: 5em; }
+    }
+    pre.numberSource code
+      { counter-reset: source-line 0; }
+    pre.numberSource code > span
+      { position: relative; left: -4em; counter-increment: source-line; }
+    pre.numberSource code > span > a:first-child::before
+      { content: counter(source-line);
+        position: relative; left: -1em; text-align: right; vertical-align: baseline;
+        border: none; display: inline-block;
+        -webkit-touch-callout: none; -webkit-user-select: none;
+        -khtml-user-select: none; -moz-user-select: none;
+        -ms-user-select: none; user-select: none;
+        padding: 0 4px; width: 4em;
+        color: #aaaaaa;
+      }
+    pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+    div.sourceCode
+      {   }
+    @media screen {
+    pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+    }
+    code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+    code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+    code span.at { color: #7d9029; } /* Attribute */
+    code span.bn { color: #40a070; } /* BaseN */
+    code span.bu { color: #008000; } /* BuiltIn */
+    code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+    code span.ch { color: #4070a0; } /* Char */
+    code span.cn { color: #880000; } /* Constant */
+    code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+    code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+    code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+    code span.dt { color: #902000; } /* DataType */
+    code span.dv { color: #40a070; } /* DecVal */
+    code span.er { color: #ff0000; font-weight: bold; } /* Error */
+    code span.ex { } /* Extension */
+    code span.fl { color: #40a070; } /* Float */
+    code span.fu { color: #06287e; } /* Function */
+    code span.im { color: #008000; font-weight: bold; } /* Import */
+    code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+    code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+    code span.op { color: #666666; } /* Operator */
+    code span.ot { color: #007020; } /* Other */
+    code span.pp { color: #bc7a00; } /* Preprocessor */
+    code span.sc { color: #4070a0; } /* SpecialChar */
+    code span.ss { color: #bb6688; } /* SpecialString */
+    code span.st { color: #4070a0; } /* String */
+    code span.va { color: #19177c; } /* Variable */
+    code span.vs { color: #4070a0; } /* VerbatimString */
+    code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
+  </style>
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">Lachesis �� ������������������</h1>
+</header>
+<h1 id="lachesis-统一施工说明">Lachesis · 统一施工说明</h1>
+<p><strong>2026-09-23 · v0.2</strong></p>
+<p>本版已将正式产品名统一为
+<strong>Lachesis</strong>。<code>监工台</code>
+只作为文档中的设计方向关键词，不是任何产品术语或可见 UI 文案。</p>
+<hr />
+<h1 id="lachesis-dsh-工单-swarm-施工包">Lachesis · dsh 工单 Swarm
+施工包</h1>
+<p><strong>讨论归档：2026-09-23｜版本：v0.1｜性质：施工交接，不是已经实现的软件</strong></p>
+<blockquote>
+<p>将任务发成工单；从可复用 Profile 启动 Agent
+实例；交付后对工单评价；把这些评价汇总为 Profile 的使用履历。</p>
+</blockquote>
+<h2 id="先读这一页">先读这一页</h2>
+<p>产品正式名为
+<strong>Lachesis</strong>。名称取自希腊神话中负责丈量与分配命运之线的
+Lachesis，与系统“接收工单、选择
+Profile、启动实例、记录结果”的职责相呼应。</p>
+<p>「监工台」只保留为<strong>设计方向关键词</strong>，用于描述“派工、看执行、验收”的交互隐喻；它不是产品名、页面名、功能名、导航项、包名、仓库名或任何对外
+UI 文案。</p>
+<p>本包只归档今天这条对话里的工单 Swarm
+项目，不包含其他项目，也不代表已经创建仓库、部署服务或完成代码。</p>
+<p><strong>最新明确要求优先于早期建议，也优先于任何生成原型中的文字。</strong></p>
+<p>最小闭环：</p>
+<p><code>外部主 Agent 提交工单 → 选择 Profile → 启动一个实例执行 → 交付 → 主 Agent 验收并评价工单 → 聚合到 Profile</code></p>
+<p>必须保持的六点：</p>
+<ol type="1">
+<li>第一阶段只支持
+dsh，整体沿用其插件式架构；不另做一套模型调用和工具循环。</li>
+<li>管理器独立于委托方主会话。主线程可以来自其他应用，不强制迁入本系统。</li>
+<li>Profile 是配置，不是一个常驻的「员工」。同一 Profile
+可以启动多个独立 Agent 实例。</li>
+<li>初期行为配置只有供应商／模型与思考强度；名称与头像是展示元数据，不是新增行为配置。</li>
+<li>评价对象是工单，不是临时实例。Profile
+分数由工单评价聚合，重试和多实例不能重复刷样本。</li>
+<li>不过度游戏化；使用用户提供的极简 Q 版头像风格参考，头像绑定
+Profile。同 Profile 的实例使用同一头像，以实例 ID 区分。</li>
+</ol>
+<h2 id="文件导航">文件导航</h2>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>文件</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>docs/00_冻结决策.md</code></td>
+<td>已确认内容、被替代的方向、解释优先级</td>
+</tr>
+<tr class="even">
+<td><code>docs/01_产品与范围.md</code></td>
+<td>使用流程、MVP 与不做什么</td>
+</tr>
+<tr class="odd">
+<td><code>docs/02_架构建议.md</code></td>
+<td>插件服务、执行边界、恢复和安全约束</td>
+</tr>
+<tr class="even">
+<td><code>docs/03_数据与接口建议.md</code></td>
+<td>领域对象、状态、评分归因、接口草案</td>
+</tr>
+<tr class="odd">
+<td><code>docs/04_UI与原型纠偏.md</code></td>
+<td>页面结构、头像规范、逐图纠偏</td>
+</tr>
+<tr class="even">
+<td><code>docs/05_施工计划与验收.md</code></td>
+<td>施工顺序、验收用例、第一条开发任务</td>
+</tr>
+<tr class="odd">
+<td><code>docs/06_参考与待定.md</code></td>
+<td>既有项目借鉴、未定事项、官方入口</td>
+</tr>
+<tr class="even">
+<td><code>AGENTS.md</code></td>
+<td>给施工 Agent 的范围与交付约束</td>
+</tr>
+<tr class="odd">
+<td><code>references/</code></td>
+<td>用户提供的头像风格参考；旧 UI 图因包含过时品牌字样已移除</td>
+</tr>
+<tr class="even">
+<td><code>Lachesis_统一施工说明.md</code></td>
+<td>合并阅读版</td>
+</tr>
+<tr class="odd">
+<td><code>Lachesis_统一施工说明.html</code></td>
+<td>离线浏览版</td>
+</tr>
+<tr class="even">
+<td><code>manifest.json</code></td>
+<td>文件大小与 SHA-256 校验信息</td>
+</tr>
+</tbody>
+</table>
+<h2 id="如何使用">如何使用</h2>
+<p>先阅读冻结决策和
+AGENTS.md，再做运行时验证，然后施工。实现建议与未定项已单独标注，不应被误写为用户确认的产品要求。前文示例中的
+SDK
+方法、模型名和包名不是依赖合同，实施前必须以锁定版本的官方源码为准。</p>
+<p>旧 UI
+原型只作为讨论过程中的设计参考；由于其中仍使用过时品牌字样，本施工包不再携带这些图片。页面结构与纠偏要求以
+<code>04_UI与原型纠偏.md</code>
+的文字说明为准。头像风格参考单独保留。</p>
+<hr />
+<h1 id="冻结决策">00 · 冻结决策</h1>
+<h2 id="证据等级与冲突处理">证据等级与冲突处理</h2>
+<ul>
+<li><strong>已确认</strong>：用户明确提出，或在对应架构建议后表示「OK，没什么问题」。</li>
+<li><strong>实现建议</strong>：为可施工性补充的工程方案，可以在不破坏已确认语义的前提下调整。</li>
+<li><strong>待定／后续</strong>：讨论未定，不是第一版必须完成的承诺。</li>
+</ul>
+<p>优先级：用户最后一次明确修正 ＞ 已确认产品语义 ＞ 本包实现建议 ＞
+原型图中文字 ＞ 早期探索。</p>
+<h2 id="已确认的产品与架构方向">已确认的产品与架构方向</h2>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>编号</th>
+<th>决策</th>
+<th>施工含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>D01</td>
+<td>独立的工单式 Swarm 管理器</td>
+<td>外部主线程向项目提交任务，服务负责调度与执行记录</td>
+</tr>
+<tr class="even">
+<td>D02</td>
+<td>第一阶段只支持 dsh</td>
+<td>暂不实现多 CLI 通用适配，也不迁到 Pi 重做</td>
+</tr>
+<tr class="odd">
+<td>D03</td>
+<td>沿用 dsh 插件式架构</td>
+<td>复用运行时与插件能力，不另写模型工具循环</td>
+</tr>
+<tr class="even">
+<td>D04</td>
+<td>不要求管理器本身是一个主 LLM</td>
+<td>确定性程序可以负责工单、领取、调度与状态</td>
+</tr>
+<tr class="odd">
+<td>D05</td>
+<td>Profile 是可复用配置</td>
+<td>不把一个 Profile 当成一位只能接一单的常驻员工</td>
+</tr>
+<tr class="even">
+<td>D06</td>
+<td>同一 Profile 能启动多个实例</td>
+<td>多实例各有执行身份、会话与工单关联，数量受资源限制</td>
+</tr>
+<tr class="odd">
+<td>D07</td>
+<td>初期行为配置为供应商／模型＋思考强度</td>
+<td>不把 persona、技能包、工具权限、长期记忆等扩张进 Profile
+初始表单</td>
+</tr>
+<tr class="even">
+<td>D08</td>
+<td>工单完成后可由主 Agent 评价</td>
+<td>评价属于工单；Profile 分数从工单评价汇总</td>
+</tr>
+<tr class="odd">
+<td>D09</td>
+<td>用得顺手可显式指定 Profile</td>
+<td>必须保留明确选人的路径，不能强制完全自动派工</td>
+</tr>
+<tr class="even">
+<td>D10</td>
+<td>「监工台」仅作为设计方向，不作为产品术语</td>
+<td>可借用派工／查看执行／验收的隐喻，但不得进入产品名、页面名、导航、UI
+文案、包名、仓库名或素材品牌</td>
+</tr>
+<tr class="odd">
+<td>D11</td>
+<td>头像参考用户提供的极简 Q 版图</td>
+<td>大头、简化椭圆眼、平涂、低对比细节，服务于识别</td>
+</tr>
+<tr class="even">
+<td>D12</td>
+<td>头像绑定 Profile</td>
+<td>同一 Profile 的并行实例不随机换脸，也不以头像推断能力</td>
+</tr>
+<tr class="odd">
+<td>D13</td>
+<td>后续考虑批量生成头像预制</td>
+<td>可能用本地模型或 GPT；不是第一版自动生图或实时生图需求</td>
+</tr>
+<tr class="even">
+<td>D14</td>
+<td>正式产品名为 <strong>Lachesis</strong></td>
+<td>DSH 只是第一阶段执行底座，不进入产品名；项目、文档、包和 UI 统一使用
+Lachesis</td>
+</tr>
+</tbody>
+</table>
+<p>D04 与「服务独立于主会话」来自已接受的 dsh-only
+方案。独立是产品与生命周期边界，不要求马上建设远程集群。</p>
+<h2 id="原始表述摘录">原始表述摘录</h2>
+<blockquote>
+<p>「主线程（和本应用通常无关）向这个应用对应的项目里发issue」</p>
+</blockquote>
+<blockquote>
+<p>「agent应该只是一种profile，也就是可以以同样的profile拉起很多个不同的agent，分别完成各种任务」</p>
+</blockquote>
+<blockquote>
+<p>「当然打分是针对工单的，然后聚合起来就是某个profile的分数」</p>
+</blockquote>
+<blockquote>
+<p>「初步的可选设定项就是模型（供应商/模型）+思考强度」</p>
+</blockquote>
+<blockquote>
+<p>「不要太游戏化了！这毕竟还是一个生产力工具！」</p>
+</blockquote>
+<blockquote>
+<p>「后续会考虑用本地模型或者gpt来批量生成一批作为预制，绑定在profile上。」</p>
+</blockquote>
+<p>这些摘录来自本次对话，用于施工时解决歧义。</p>
+<h2 id="名称与视觉的冻结程度">名称与视觉的冻结程度</h2>
+<p>正式产品名已确定为 <strong>Lachesis</strong>。DSH
+不进入产品名。仓库名建议使用 <code>lachesis</code>
+或其组织内可用变体，域名可用性另行确认。</p>
+<p>「监工台」只作为设计方向关键词保留在文档中，用于解释派工、查看执行与验收的交互隐喻；不得作为产品名、页面名、功能名、导航项、包名、仓库名或素材品牌。早期的「派工台
+/ DispatchHub」与「帕鲁监工台 / PAL SUPERVISOR」均为已弃用探索。</p>
+<p>用户最后确认的是生产力取向与头像风格，未逐项批准最后四张图里的导航、颜色、评分权重、统计面板和数据。因此不能把整张图当成完整
+PRD。</p>
+<h2 id="调度策略的冻结程度">调度策略的冻结程度</h2>
+<p>用户最初提出轮询／随机／LLM
+指定等方式，并保留显式点名。归档为「调度可扩展方向」。其中：</p>
+<ul>
+<li>轮询是发现新任务的机制；轮转、随机和 LLM 推荐是选 Profile
+的机制。</li>
+<li>第一版具体默认算法尚未定案。</li>
+<li>显式指定是必须保留的产品能力。</li>
+<li>「必须使用」与「优先使用」的区别是建议补充的接口语义，见接口文档。</li>
+</ul>
+<h2 id="已被后续方向替代或排除的内容">已被后续方向替代或排除的内容</h2>
+<p>不做一开始就管理 Codex、Claude Code、Pi 等多种 CLI；不采用重型「AI
+公司」组织架构；不把每个 Agent
+永久人格化；不将实例直接计分；不把游戏化监工场景作为主界面；不因为图中出现某项配置就扩大
+Profile 的初始配置范围。</p>
+<hr />
+<h1 id="产品与范围">01 · 产品与范围</h1>
+<h2 id="一句话产品定义">一句话产品定义</h2>
+<p>一个独立运行、以工单为协作单位、由 dsh
+执行任务的生产力工具。用户维护少量可复用
+Profile；调用方按项目提交工单；系统从 Profile 启动临时 Agent
+实例；任务被验收和评价后，留下可查询的执行记录与 Profile 履历。</p>
+<h2 id="主要使用者">主要使用者</h2>
+<p>委托方可以是外部主
+Agent，也可以是人类操作员。执行实例负责具体任务，管理服务负责保存工单与执行状态。委托方主
+Agent 与 worker 使用的模型没有必须强弱排序的限制。</p>
+<p>生产力工具不应强迫用户长期盯着监控页。常见流程应能通过少量工具／API
+完成，UI 用来配置、查看异常、检查结果与人工介入。</p>
+<h2 id="三条必须跑通的流程">三条必须跑通的流程</h2>
+<h3 id="a.-点名执行">A. 点名执行</h3>
+<p>用户已有「白露」Profile，配置为某供应商下的模型与指定思考强度。外部主
+Agent 向某项目创建工单，写清目标、输入和验收标准，指定该
+Profile。服务接收后返回工单
+ID，领取任务并启动实例，最后生成交付记录。委托方查询或接收事件，决定接受或返工，再对工单评价。</p>
+<h3 id="b.-同-profile-并发">B. 同 Profile 并发</h3>
+<p>两个不同工单都选「白露」。在资源许可时，同时启动「白露 · 实例
+A」与「白露 · 实例 B」。两者使用相同 Profile
+配置与头像，但会话、工作状态和结果互不混淆。取消 A 不得取消 B。</p>
+<h3 id="c.-验收返工与聚合">C. 验收、返工与聚合</h3>
+<p>执行结束不自动代表验收通过。工单先进入待验收；委托方可以补充要求、返工或接受。一次工单的多次执行不应变成多条独立质量样本。聚合结果应能追溯到具体工单评价，而不是仅显示一个来源不明的分数。</p>
+<h2 id="第一版建议范围">第一版建议范围</h2>
+<p>以下拆分是施工建议，不新增已确认行为配置。</p>
+<table>
+<thead>
+<tr class="header">
+<th>模块</th>
+<th>建议第一版能力</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>项目</td>
+<td>名称、输入／工作区关联、工单归属</td>
+</tr>
+<tr class="even">
+<td>Profile</td>
+<td>名称、头像、供应商、模型、思考强度；可复制、停用</td>
+</tr>
+<tr class="odd">
+<td>工单</td>
+<td>标题、描述、输入引用、验收标准、状态、Profile 选择</td>
+</tr>
+<tr class="even">
+<td>执行</td>
+<td>启动实例、观察状态、补充消息、取消、超时处理、结果归档</td>
+</tr>
+<tr class="odd">
+<td>交付</td>
+<td>摘要、文件或补丁引用、验证证据、运行记录</td>
+</tr>
+<tr class="even">
+<td>评价</td>
+<td>对工单评分与写意见，聚合到对应 Profile</td>
+</tr>
+<tr class="odd">
+<td>调度</td>
+<td>显式指定；自动模式先采用一个简单、可解释的策略</td>
+</tr>
+<tr class="even">
+<td>UI</td>
+<td>工单列表／详情、Profile 列表／编辑、执行实例查看</td>
+</tr>
+</tbody>
+</table>
+<p>运行日志、凭据保护、并发约束属于基础工程，不应因此把复杂权限和预算编辑器塞进
+Profile 页面。</p>
+<h2 id="明确不纳入初始必做范围">明确不纳入初始必做范围</h2>
+<p>不做多
+CLI；不做自治公司与组织树；不做长期人格和共享记忆；不做自动自我修改；不做工作者养成；不做复杂绩效排行榜；不做根据头像自动推断岗位；不做自动批量头像生成界面；不承诺任何供应商订阅都可以无条件转接到
+dsh。</p>
+<p>LLM 路由、按历史反馈自适应选人、更复杂的工作流、外部 GitHub／Linear
+同步、远程执行与账号额度可视化都可后续演进，不能阻塞点名执行闭环。</p>
+<h2 id="外部调用方的交互原则">外部调用方的交互原则</h2>
+<p>提交后立即得到可查询的 ID，不让 HTTP
+请求或工具调用一直绑定完整执行时长。调用方可以选择查询或等待事件；退出后也能重新读取结果。</p>
+<p>不能承诺给任意外部 CLI
+自动插入消息。调用端有事件接收能力时可以推送，否则通过查询／等待完成。通知不是结果的唯一存放位置。</p>
+<p>每张工单保留委托来源与调用方关联
+ID。重试提交应支持幂等；跨项目／跨调用方数据不能因复用 Profile
+混在一起。</p>
+<h2 id="产品指标">产品指标</h2>
+<p>优先记录真实的已评工单数、待验收数、执行耗时、失败原因和并发实例数。供应商实际提供的用量可记录；未知成本应显示未知，不能凭
+token 数臆造账单。</p>
+<p>不以图中的「28% 完成」「预计两小时」「96.8
+置信度」作为必须实现的指标。没有可靠依据时，显示已发生的步骤和最近活动即可。</p>
+<hr />
+<h1 id="架构建议">02 · 架构建议</h1>
+<p><strong>本章是已确认方向下的实现建议。模块名、数据库、进程边界和 SDK
+调用需在锁定的 dsh 版本上验证。</strong></p>
+<h2 id="分为控制服务与执行运行时">1. 分为控制服务与执行运行时</h2>
+<p>控制服务持有项目、工单、Profile、领取关系、执行记录、评价与通知记录。执行运行时复用
+dsh 的模型调用、工具执行、会话和插件机制。</p>
+<pre class="text"><code>外部主 Agent / 人类客户端
+       │ 提交、查询、补充、取消、验收、评分
+       ▼
+Lachesis 服务（dsh / Cordis 插件式应用）
+       ├─ 工单与 Profile 存储
+       ├─ 调度与领取
+       ├─ 运行记录、交付物、评价
+       └─ 事件与客户端接入
+       │
+       ▼
+DshExecutor（第一版唯一执行器）
+       ├─ 执行 A：Profile X / 独立会话
+       ├─ 执行 B：Profile X / 独立会话
+       └─ 执行 C：Profile Y / 独立会话</code></pre>
+<p>主 Agent 不需要常驻
+Lachesis。工单不会因委托方对话结束而被删除或取消。控制服务是否与 worker
+共进程，是实现选择，不改变独立工单服务的语义。</p>
+<h2 id="初期少量插件内部清楚分层">2. 初期少量插件，内部清楚分层</h2>
+<p>建议先有 <code>swarm-service</code> 与 <code>swarm-tools</code>
+两个入口，名称仅为草案。</p>
+<p><code>swarm-service</code>
+对外提供任务管理服务；内部按普通代码模块分成存储、调度、执行和评价。<code>swarm-tools</code>
+把经过授权的操作暴露给调用方 Agent。UI
+作为服务客户端，不自行实现另一套工单状态机。</p>
+<p>不要为了「一切皆插件」把每个数据库表、按钮或排序函数都拆成 npm
+包。只有存在独立生命周期、替换需求或第三方实现时才抽出扩展接口。</p>
+<p>插件卸载、重载和服务关闭必须有清楚的处理规则。持久化业务状态不能只保存在某个插件的内存对象里。建议正在执行的
+worker 使用固定配置，配置变更影响新 Run，不热改旧 Run。</p>
+<h2 id="工单执行记录实例会话分开">3. 工单、执行记录、实例、会话分开</h2>
+<ul>
+<li><strong>Issue</strong>：需要交付什么，属于哪个项目，谁验收。</li>
+<li><strong>Run</strong>：某 Profile
+配置快照对该工单的一次执行尝试。</li>
+<li><strong>Instance</strong>：实际运行中的 Agent
+执行实体，临时存在。</li>
+<li><strong>Session</strong>：dsh 保存上下文与执行过程的会话资源。</li>
+</ul>
+<p>第一版建议一个 Run
+对应一个实例和一个独立会话，减少关联歧义。这是可调整的实现策略，不限制未来一个工单有多次
+Run。</p>
+<p>服务只保存必要引用，不复制一套完整 dsh
+会话存储。会话历史不是工单数据库，反之亦然。不要把某个主会话的内部子任务列表当成长期项目任务账。</p>
+<h2 id="只保留一个薄执行接口">4. 只保留一个薄执行接口</h2>
+<p>建议的应用接口，不是 dsh 原生方法：</p>
+<pre class="text"><code>Executor.start(runSpec)          → handle
+Executor.observe(handle)        → events / state
+Executor.send(handle, message)  → receipt
+Executor.cancel(handle)         → cancellation outcome
+Executor.collect(handle)        → delivery + evidence</code></pre>
+<p>第一版只有 DshExecutor。其他模块不能依赖 dsh
+私有类、私有会话文件字段或终端输出的偶然格式。以后出现真实需求，再实现其他
+runtime。</p>
+<p>对恢复、运行中消息插入、取消等能力，实际支持就声明；不支持要明确失败。不要接受参数后静默忽略。禁止通过
+<code>process.chdir()</code>、改共享环境变量或修改全局默认模型来实现并发隔离。</p>
+<h2 id="dsh-接口验证是开工第一步">5. dsh 接口验证是开工第一步</h2>
+<p>本次讨论包含进程内 Agent 接口、subagent、SDK
+等多条路径，但没有完成运行对照测试。前文一些接口示意和引用不能直接当代码复制。</p>
+<p>特别需要验证：</p>
+<ol type="1">
+<li>指定 provider、model
+和思考强度是否真实生效；不支持的值是否明确报错。</li>
+<li>一个 worker 的模型配置、工作目录和凭据是否影响其他 worker。</li>
+<li>当前 SDK／宿主接口能否对单个任务取消，而不是关闭整个共享进程。</li>
+<li>完成事件到底表示收到了消息、一个 turn 结束、Agent
+空闲，还是任务交付。</li>
+<li>同一会话多条消息的结果是否能可靠归因；不能时使用单 Run
+独立会话。</li>
+<li>恢复和重启能否继续，或者只能标记中断并创建新的 Run。</li>
+</ol>
+<p>前文读到的 SDK 文档曾明确区分「入队回执」与「结果」，并提示部分 wire
+没有逐提示取消或会话关闭接口。必须以实际锁定版本复查。不能因为高层示例出现
+<code>run()</code>，就假定它是严格一问一答的任务完成协议。</p>
+<h2 id="第一版可用的部署取舍">6. 第一版可用的部署取舍</h2>
+<p>建议单机、单控制服务，持久化数据库可先评估
+SQLite。具体数据库没有被用户拍板，选择依据是领取事务、幂等、崩溃恢复与运维简单，而不是为了提前做集群。</p>
+<p>worker 可使用独立 dsh 进程，或对可信任务使用进程内
+Agent。独立进程便于单任务回收，但不是安全沙箱；同进程成本可能较低，但必须验证局部配置、取消和生命周期互不干扰。没有测量前不写性能结论。</p>
+<p>对于并行写代码，建议每个 Run 准备独立工作区，并记录基准
+commit。工作区隔离与操作系统沙箱是不同问题。合并和组合验证由交付／验收流程负责，不让所有实例直接写主分支。</p>
+<h2 id="持久性与取消">7. 持久性与取消</h2>
+<p>领取应在事务中完成，避免同一候选被重复派工。每次 Run
+有唯一身份与递增代次／租约标识。实例失联后可以回收；旧实例迟到的结果不得覆盖新的有效结果。</p>
+<p>采用至少一次事件投递时，写入和回调都必须幂等。不要宣称任意外部副作用「恰好执行一次」。发布、付款、远端删除、合并等操作不属于默认自由重试范围。</p>
+<p>取消请求、取消已生效和进程已退出不能混为一谈。超时后应停止或回收实际
+worker，并标记已知副作用；不能只把 UI 状态改为取消。</p>
+<p>重启后先读取未终结
+Run，校验执行者存活状态，再决定恢复或终结。未知执行不能直接重新派工而忽略可能仍在工作的旧
+worker。</p>
+<h2 id="配置与账号">8. 配置与账号</h2>
+<p>Profile
+只引用已配置的供应商入口与模型，不保存明文密钥。供应商连接与凭据管理尽量复用
+dsh
+已有能力。实例获得最小必要凭据，日志、工单、导出包中不得包含密钥。</p>
+<p>同一个订阅／账号被多个 Profile
+引用时，建议在服务层共享并发上限或资源池。账号额度耗尽是可用性问题，不自动转换成工单质量差评。</p>
+<p>名字、头像改变不应清空质量履历。模型或思考强度改变后，建议创建配置修订，旧
+Run 和评价仍引用原修订。</p>
+<h2 id="原生-subagent-与工单协作">9. 原生 subagent 与工单协作</h2>
+<p>第一版可暂不开放 worker
+递归委派，避免管理器只计三个实例，而实例内部实际又开出许多子 Agent。</p>
+<p>未来可区分：短时局部查询用原生
+subagent；需要独立交付和验收的工作用子工单。两者共享资源与取消约束，不能出现两套互相看不见的并发账。</p>
+<p>不需要为了任务服务先创建一个负责所有事情的「总经理 Agent」。LLM
+选人可以是调度模块的可选能力，不是整个服务运转的前提。</p>
+<hr />
+<h1 id="数据与接口建议">03 · 数据与接口建议</h1>
+<p><strong>以下是应用领域模型草案，不是 dsh 的真实 SDK
+类型；字段命名与存储可调整，语义不得违反冻结决策。</strong></p>
+<h2 id="领域对象">1. 领域对象</h2>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>对象</th>
+<th>必要含义</th>
+<th>与其他对象的关系</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Project</td>
+<td>项目身份及输入／工作区归属</td>
+<td>包含工单</td>
+</tr>
+<tr class="even">
+<td>Profile</td>
+<td>可复用配置的稳定身份、名称、头像</td>
+<td>可有多个配置修订，启动多个实例</td>
+</tr>
+<tr class="odd">
+<td>ProfileRevision</td>
+<td>provider／model／effort 的行为快照</td>
+<td>被 Run 和评价归因引用</td>
+</tr>
+<tr class="even">
+<td>Issue</td>
+<td>任务目标、验收标准、来源、状态</td>
+<td>可有多次 Run，评价属于它</td>
+</tr>
+<tr class="odd">
+<td>Run</td>
+<td>一次实际尝试及使用的配置</td>
+<td>关联实例、会话、交付记录</td>
+</tr>
+<tr class="even">
+<td>Instance</td>
+<td>临时执行实体及存活状态</td>
+<td>第一版建议一个 Run 一个实例</td>
+</tr>
+<tr class="odd">
+<td>Delivery</td>
+<td>摘要、文件、补丁、验证证据</td>
+<td>由 Run 提交，等待验收</td>
+</tr>
+<tr class="even">
+<td>IssueEvaluation</td>
+<td>对一张工单的评价及修订</td>
+<td>归因到明确 Profile 修订</td>
+</tr>
+<tr class="odd">
+<td>AvatarPreset</td>
+<td>可选的静态头像素材</td>
+<td>Profile 引用，不决定模型能力</td>
+</tr>
+</tbody>
+</table>
+<p>实例 ID 不是 Profile ID。不同 Profile
+即使同模型同强度，也可以拥有不同展示身份；同 Profile
+的不同实例不能被当成不同配置。</p>
+<h2 id="profile-的初期配置边界">2. Profile 的初期配置边界</h2>
+<p>行为配置只有这三个选择：</p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;providerId&quot;</span><span class="fu">:</span> <span class="st">&quot;provider-config-a&quot;</span><span class="fu">,</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;modelId&quot;</span><span class="fu">:</span> <span class="st">&quot;user-selected-model&quot;</span><span class="fu">,</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;reasoningEffort&quot;</span><span class="fu">:</span> <span class="st">&quot;provider-supported-value&quot;</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p><code>name</code>、<code>avatarPresetId</code>、<code>id</code>、<code>revision</code>、创建时间是展示／管理元数据，不等于增加了角色提示词或工具行为。</p>
+<p>思考强度候选由模型实际能力决定。没有暴露该能力的模型应显示「不支持／默认」，不能机械地替所有模型制造低、中、高三档。</p>
+<p>供应商入口应能区分用户配置的不同端点或账号引用，不只保存「OpenAI」或「DeepSeek」这种品牌文本。敏感凭据保留在受控配置层，而非
+Profile JSON。</p>
+<h2 id="工单草案">3. 工单草案</h2>
+<div class="sourceCode" id="cb4"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;id&quot;</span><span class="fu">:</span> <span class="st">&quot;issue-demo-001&quot;</span><span class="fu">,</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;projectId&quot;</span><span class="fu">:</span> <span class="st">&quot;project-demo&quot;</span><span class="fu">,</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;title&quot;</span><span class="fu">:</span> <span class="st">&quot;修复用户登录态异常失效&quot;</span><span class="fu">,</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;description&quot;</span><span class="fu">:</span> <span class="st">&quot;复现问题，定位原因，提交最小修复与回归测试。&quot;</span><span class="fu">,</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;acceptanceCriteria&quot;</span><span class="fu">:</span> <span class="ot">[</span><span class="st">&quot;能复现原问题&quot;</span><span class="ot">,</span> <span class="st">&quot;回归测试通过&quot;</span><span class="ot">,</span> <span class="st">&quot;提交变更说明&quot;</span><span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;inputRefs&quot;</span><span class="fu">:</span> <span class="ot">[]</span><span class="fu">,</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;dispatch&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;mode&quot;</span><span class="fu">:</span> <span class="st">&quot;require&quot;</span><span class="fu">,</span></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;profileId&quot;</span><span class="fu">:</span> <span class="st">&quot;profile-bailu&quot;</span></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">},</span></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;requesterRef&quot;</span><span class="fu">:</span> <span class="st">&quot;external-client-demo&quot;</span><span class="fu">,</span></span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;clientRequestId&quot;</span><span class="fu">:</span> <span class="st">&quot;demo-request-001&quot;</span></span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>此处 <code>require</code> 是建议语义：必须使用指定
+Profile，不可静默换人。<code>prefer</code>
+可以允许事先明确的回退；<code>auto</code>
+由已启用策略选择。第一版不必同时实现全部策略。</p>
+<p>时间限制、应用并发与凭据策略可由项目／服务默认值提供，不强迫用户创建
+Profile 时填大量高级选项。</p>
+<h2 id="建议状态流">4. 建议状态流</h2>
+<pre class="text"><code>queued → running → awaiting_review → accepted
+              ├→ needs_input → running
+              ├→ failed
+              └→ cancelled
+
+awaiting_review → rework → queued → 新 Run</code></pre>
+<p>是否需要 draft、rejected 等额外状态可在施工中确定。</p>
+<p>不变量：worker
+的自述「完成」最多触发交付／待验收；只有被授权的委托方或审查者能执行验收操作。进程正常退出、测试通过、turn
+结束都不是自动验收的同义词。</p>
+<p>实例状态与工单状态分开。例如 worker
+已退出，但工单仍然可以等待验收；一个工单返工产生新 Run，旧 Run
+仍保留。</p>
+<h2 id="评分归属与聚合">5. 评分归属与聚合</h2>
+<p><strong>已确认：对工单评分，聚合成 Profile 的分数。</strong></p>
+<p>建议 IssueEvaluation 至少保存：工单
+ID、评价修订、评价者、时间、分值、意见、归因 Profile
+ID／修订，以及作为证据的交付／Run 引用。Run
+引用是证据，不把评分对象改成实例。</p>
+<h3
+id="推荐的第一版规则尚未由用户逐项拍板">推荐的第一版规则，尚未由用户逐项拍板</h3>
+<ul>
+<li>评分采用 1–5 分，可附文本意见；不必一开始就有四维雷达或权重。</li>
+<li>不强制接受时必须打分。未评分就显示未评分，不记为零分。</li>
+<li>按有评价的独立工单做简单均值，显示样本数；不默认加权或隐藏计算过程。</li>
+<li>返工多次、同 Profile
+开多个实例，一张工单在当前汇总中只贡献一份有效评价。</li>
+<li>修改评价时保留旧修订，但当前汇总只取该工单最新有效评价。</li>
+<li>失败或未接受的工单可以保留实际评价；不能仅统计成功接受工单而制造幸存者偏差。</li>
+<li>没有评价的失败不自动记为最低分。可另展示失败原因与运行可靠性记录。</li>
+</ul>
+<p>建议计算：</p>
+<p><code>Profile 某修订平均分 = 属于该修订的有效工单评分总和 / 已评独立工单数</code></p>
+<p>跨修订总分可以展示，但需清楚标注；默认关注当前行为配置对应的履历，不把换模型前的表现无条件算成新模型能力。</p>
+<h3 id="多-profile-参与一张工单">多 Profile 参与一张工单</h3>
+<p>这是未完全定案的归因边界。第一版建议每次可评分交付有一个明确的主执行
+Profile；其他尝试和独立审查仍留记录，但不把同一工单分数复制给所有参与者。</p>
+<p>跨 Profile
+换人、联合交付或并行竞赛时必须明确归因，不能暗中选择平均分、最后一次或所有人共享。需要各自独立评价的工作，可以后续拆成独立子工单。</p>
+<h2 id="建议接口集合">6. 建议接口集合</h2>
+<p>名称仅用于应用设计，不承诺是已经存在的 dsh 工具。</p>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>操作</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>profile.list/get/create/update/disable</code></td>
+<td>管理可复用配置与头像元数据</td>
+</tr>
+<tr class="even">
+<td><code>issue.create/get/list</code></td>
+<td>提交和读取工单</td>
+</tr>
+<tr class="odd">
+<td><code>issue.comment</code></td>
+<td>补充要求或持久讨论</td>
+</tr>
+<tr class="even">
+<td><code>issue.dispatch</code></td>
+<td>指定或确认执行配置</td>
+</tr>
+<tr class="odd">
+<td><code>issue.cancel</code></td>
+<td>请求取消并返回实际执行状态</td>
+</tr>
+<tr class="even">
+<td><code>issue.accept</code></td>
+<td>接受交付</td>
+</tr>
+<tr class="odd">
+<td><code>issue.rework</code></td>
+<td>发回修改，保留历史</td>
+</tr>
+<tr class="even">
+<td><code>issue.evaluate</code></td>
+<td>评价工单并更新聚合</td>
+</tr>
+<tr class="odd">
+<td><code>run.get/events</code></td>
+<td>读取执行状态、证据和事件</td>
+</tr>
+<tr class="even">
+<td><code>events.wait</code></td>
+<td>有超时与游标的等待，不作为唯一持久存储</td>
+</tr>
+</tbody>
+</table>
+<p>创建工单和提交评价都应支持幂等。事件携带稳定
+ID／游标，客户端断线重连能够补读，不重复通知成多张工单。控制服务统一鉴权，worker
+不应自行调用验收和给自己评分。</p>
+<h2 id="结果数据">7. 结果数据</h2>
+<p>建议 Delivery
+包括可读摘要、产物引用、验证记录和使用的执行配置。验证记录区分「工具实际执行结果」与「模型自述」；不要把文本中写的
+all tests passed 自动当成系统已经验真。</p>
+<p>资源指标来自真实观测。无法取得 token 或成本时保留
+null／未知。最终交付文案、日志与可下载文件应通过同一 Run
+关联，不能混用其他实例的结果。</p>
+<hr />
+<h1 id="ui-与原型纠偏">04 · UI 与原型纠偏</h1>
+<h2 id="视觉方向">1. 视觉方向</h2>
+<p><strong>已确认：这是生产力工具，不是模拟经营游戏。</strong></p>
+<p>产品 UI 统一使用 <strong>Lachesis</strong>
+品牌。「监工台」仅是设计方向关键词：可以借用“派工、看执行、验收”的轻微趣味，但不得把这个词本身放进产品名、页面名、导航、按钮、状态、Logo
+或其他可见 UI 文案。</p>
+<p>以极简头像让不同 Profile
+容易识别。主体使用清晰的工单、执行状态、交付和配置界面，不加入占据主屏的工厂场景、幻兽人物或经营系统。</p>
+<p>最后一版参考图的浅色界面与头像方向可供参考，但蓝色主题、卡片圆角、侧栏布局并没有被正式冻结。施工应先保证密度、可读性、键盘操作与状态准确。</p>
+<h2 id="头像规范">2. 头像规范</h2>
+<p>用户原图为四格极简 Q
+版头像风格参考：大头近景、椭圆简化眼睛、少量腮红、平涂与柔和阴影，通过发色、发型、发饰或眼镜形成区分。无需识别或复用原图角色身份。</p>
+<p>头像绑定
+Profile，不绑定模型供应商，也不绑定每次临时实例。并行实例应显示同一头像＋Profile
+名＋简短实例 ID，例如「白露 · #A17」「白露 ·
+#A18」。不要给每个实例重新生成头像。</p>
+<p>第一版建议从本地静态素材选择预制头像，并保存
+<code>avatarPresetId</code>。后续再开发本地模型／GPT
+批量生成与素材整理流程；不能自动引发 API 消费，也不要求创建 Profile
+时在线生图。</p>
+<p>原始四格图只作为风格参考归档，不视为已取得生产发布素材授权。正式发布应使用来源清楚的新预制素材。头像的可爱外观不应触发隐藏
+persona、模型路由或岗位设定。</p>
+<h2 id="最小页面集合">3. 最小页面集合</h2>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>页面</th>
+<th>主要信息</th>
+<th>主要动作</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>项目／工单列表</td>
+<td>状态、标题、所用 Profile、最近活动</td>
+<td>新建、筛选、进入详情</td>
+</tr>
+<tr class="even">
+<td>工单详情</td>
+<td>任务要求、验收标准、当前执行、交付、评价</td>
+<td>补充、取消、验收、返工、评分</td>
+</tr>
+<tr class="odd">
+<td>Profile 管理</td>
+<td>头像、名称、供应商／模型、思考强度、已评工单数</td>
+<td>新建、编辑、复制、停用、选择头像</td>
+</tr>
+<tr class="even">
+<td>执行实例</td>
+<td>实例 ID、Profile、关联工单、运行状态与时长</td>
+<td>查看日志、结果、停止</td>
+</tr>
+</tbody>
+</table>
+<p>概览是否独立一页待定。初期直接把工单列表作为首页也成立。评审可先放工单详情，不必为了凑导航单独造一套子系统。</p>
+<h2 id="profile-编辑页的限制">4. Profile 编辑页的限制</h2>
+<p>行为编辑区域仅供应商、模型、思考强度；展示区域可有名称和头像。当前
+Profile 实例数、已评工单数、分数可以是只读信息。</p>
+<p>不照搬图中「擅长需求分析」「代码开发专家」「技能包」「职业标签」「高性能」等未经定义的能力。模型与思考强度不能根据头像自动设置。</p>
+<p>模型不支持思考强度时，控件应禁用或展示供应商默认，而不是强行保存一个无法执行的值。</p>
+<p>同 Profile
+的实例列表必须使用一致的头像、供应商、模型和行为修订；只有明确记录的旧修订执行例外，而且
+UI 应展示版本区别。</p>
+<h2 id="工单与评价页的限制">5. 工单与评价页的限制</h2>
+<p>执行完毕后是待验收，不是自动完成。评分属于工单，实例列表不提供独立「给此员工评分」按钮。</p>
+<p>不默认采用原型里的加权聚合、不默认只计已接受工单、不默认四维评分。实际分值、样本与聚合规则按数据文档中的建议或后续决策实现。</p>
+<p>截图里的人员聊天、产品经理、工程师和固定技术负责人只是示例，没有多用户组织架构需求。来源可以简单显示人类或外部主
+Agent。</p>
+<h2 id="执行实例页的限制">6. 执行实例页的限制</h2>
+<p>使用清楚的事实状态：已排队、启动中、运行中、等待输入、已结束、失败、取消等。没有真实进度模型时，不显示精确完成百分比或预计剩余时间。</p>
+<p>CPU、内存、token、成本不是必须都做成图表；没有采集就不显示虚构读数。不要为了保留一个「空闲员工」面板而默认常驻大量
+Agent 进程。</p>
+<h2 id="页面结构参考旧图已移除">7. 页面结构参考（旧图已移除）</h2>
+<h3 id="概览工单首页">概览／工单首页</h3>
+<p>可参考：侧栏＋工单列表＋Profile 识别＋执行实例入口。</p>
+<p>须纠正：同名 Profile
+的头像、模型信息必须统一；顶部趋势、历史日期、平均分和成功率都是占位数据；删除未经定义的技能和职业标签。不要为了照抄仪表盘而优先做分析图表。</p>
+<h3 id="profile-管理">Profile 管理</h3>
+<p>可参考：列表与编辑区、预制头像选择、关联实例列表。</p>
+<p>须纠正：只保留初始三项行为选择；描述／标签不是既定智能能力；右侧加权和仅接受工单聚合说明未经确认；一个
+Profile 的所有实例必须继承该 Profile 的头像与配置快照。</p>
+<h3 id="执行实例">执行实例</h3>
+<p>可参考：实例 ID、Profile、工单、运行时长与详情抽屉。</p>
+<p>须纠正：图中某些同名 Profile
+显示不同供应商或模型，不能照搬；关系图中由一个 Profile
+变出多种头像也错误。正确关系是同头像的多个实例，分别关联任务。CPU、进度和配额读数仅为占位。</p>
+<h3 id="工单与验收">工单与验收</h3>
+<p>可参考：任务描述、验收清单、关联文件、执行记录与验收动作。</p>
+<p>须纠正：标题写同一 Profile
+启动的实例时，不能给它们不同头像；评分区域与待验收状态应一致；多维评分不是冻结需求；文件、PR、测试数与模型名都是示例。</p>
+<h2 id="已弃用的原型方向">8. 已弃用的原型方向</h2>
+<p>早期「派工台 /
+DispatchHub」企业仪表盘太重；以「监工台」为显式品牌、以及「帕鲁监工台 /
+PAL SUPERVISOR」的 3D
+小屋和动物工人方案都过度游戏化。这些只作为设计过程记录，不作为产品命名或施工素材。</p>
+<p>最后一轮 UI 图片也因仍含过时品牌字样而从施工包与 Drive
+素材目录移除。页面布局可参考本节的文字描述；重新出图时必须使用
+<strong>Lachesis</strong>，或在纯线框阶段不显示品牌。出现矛盾时优先执行冻结决策。</p>
+<hr />
+<h1 id="施工计划与验收">05 · 施工计划与验收</h1>
+<p><strong>实施顺序建议，不是估时承诺。交接包没有执行代码施工。</strong></p>
+<h2 id="m0-锁定运行时与验证接入">M0 · 锁定运行时与验证接入</h2>
+<p>先选一个实际可安装的 dsh
+版本／提交，记录插件组合和复现命令。用两个用户可用的模型配置验证
+provider、model 和思考强度，不把原型的旧模型名写成默认值。</p>
+<p>最小验证程序应能创建独立执行、读取事件、识别交付、取消其中一个而不影响另一个，并检查会话／工作目录／凭据是否串用。复查
+SDK 的逐任务取消和消息结果归因能力。</p>
+<p>交付：<code>docs/runtime-contract.md</code>、最小可复现测试、版本锁定。接口不存在时报告差异并选可行路径，不伪造
+dsh SDK 方法。</p>
+<h2 id="m1-数据与-profile">M1 · 数据与 Profile</h2>
+<p>落地
+Project、Profile、配置修订、Issue、Run、Delivery、IssueEvaluation
+的最小存储与迁移。实现 Profile 的三项行为配置、名称、静态头像绑定。</p>
+<p>交付：可重启保存的配置与工单；同 Profile
+多实例的数据模型；无明文密钥落入数据库导出或日志。</p>
+<h2 id="m2-一张工单执行闭环">M2 · 一张工单执行闭环</h2>
+<p>外部客户端提交工单并指定 Profile，服务持久接收、领取、启动
+dsh、记录事实事件和交付，进入待验收。先跑通一条确定性流程，不优先做推荐算法和图表。</p>
+<p>交付：提交、查询、取消、查看日志与交付的程序化入口；外部会话退出后仍能取回结果。</p>
+<h2 id="m3-并发失败与恢复">M3 · 并发、失败与恢复</h2>
+<p>同 Profile
+至少验证两个实例执行不同工单。实现并发约束、独立工作区、超时回收、重启校对、幂等提交与迟到结果保护。</p>
+<p>交付：能证明不会混结果、重复领取、取消连坐和旧结果覆盖新结果的测试。</p>
+<h2 id="m4-验收返工工单评分">M4 · 验收、返工、工单评分</h2>
+<p>增加接受交付、发回修改、评价工单以及 Profile
+聚合。原型推荐的一星到五星只是建议，采用前应在项目决策中写明规则。</p>
+<p>交付：一张工单多次 Run
+只贡献一个当前有效评分；聚合有样本数和来源；未评分不算零分；换模型后历史能追溯。</p>
+<h2 id="m5-最小-ui-与整理交付">M5 · 最小 UI 与整理交付</h2>
+<p>工单列表／详情、Profile
+管理、实例日志与结果。头像只从静态预制选择，遵循同 Profile
+同头像。测试空状态、错误、排队、待验收和取消中的展示。</p>
+<p>交付：可使用的最小界面、真实数据截图、启动说明、已知限制。最后再决定是否需要首页仪表盘、看板、多维评分和
+LLM 路由。</p>
+<h2 id="核心验收用例">核心验收用例</h2>
+<table>
+<thead>
+<tr class="header">
+<th>ID</th>
+<th>场景</th>
+<th>通过标准</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>T01</td>
+<td>外部创建工单</td>
+<td>返回稳定 ID，可再次查询，无需保留提交连接</td>
+</tr>
+<tr class="even">
+<td>T02</td>
+<td>重复提交</td>
+<td>同项目同幂等键不创建两张工单</td>
+</tr>
+<tr class="odd">
+<td>T03</td>
+<td>点名 Profile</td>
+<td>实际使用被指定配置，不静默换模型或账号</td>
+</tr>
+<tr class="even">
+<td>T04</td>
+<td>指定配置不可用</td>
+<td>明确等待／报错，原因可查看</td>
+</tr>
+<tr class="odd">
+<td>T05</td>
+<td>不支持的思考强度</td>
+<td>不伪装生效；使用前有明确校验反馈</td>
+</tr>
+<tr class="even">
+<td>T06</td>
+<td>同 Profile 两个实例</td>
+<td>相同配置与头像，不同实例／会话／任务记录</td>
+</tr>
+<tr class="odd">
+<td>T07</td>
+<td>并行任务隔离</td>
+<td>A 的文件、上下文和结果不混到 B</td>
+</tr>
+<tr class="even">
+<td>T08</td>
+<td>局部取消</td>
+<td>取消 A 不影响 B；实际执行得到停止或明确回收结果</td>
+</tr>
+<tr class="odd">
+<td>T09</td>
+<td>提交方退出</td>
+<td>已接受工单仍保留，可重新读取进展与结果</td>
+</tr>
+<tr class="even">
+<td>T10</td>
+<td>重复领取竞争</td>
+<td>只有一个当前有效领取关系</td>
+</tr>
+<tr class="odd">
+<td>T11</td>
+<td>worker 失联</td>
+<td>状态可恢复或明确终结，不永远假运行</td>
+</tr>
+<tr class="even">
+<td>T12</td>
+<td>旧实例迟到交付</td>
+<td>不覆盖新 Run 的当前有效结果</td>
+</tr>
+<tr class="odd">
+<td>T13</td>
+<td>服务重启</td>
+<td>未终结 Run 先校对，不盲目重复启动</td>
+</tr>
+<tr class="even">
+<td>T14</td>
+<td>执行结束</td>
+<td>进入待验收，不自动接受</td>
+</tr>
+<tr class="odd">
+<td>T15</td>
+<td>worker 自评／自验收</td>
+<td>未授权操作被拒绝</td>
+</tr>
+<tr class="even">
+<td>T16</td>
+<td>返工</td>
+<td>保留旧交付与 Run，建立新的尝试</td>
+</tr>
+<tr class="odd">
+<td>T17</td>
+<td>工单多次执行</td>
+<td>不按实例数量重复增加评分样本</td>
+</tr>
+<tr class="even">
+<td>T18</td>
+<td>未评分</td>
+<td>显示未评分，不以零分参与均值</td>
+</tr>
+<tr class="odd">
+<td>T19</td>
+<td>修订评分</td>
+<td>留历史，但当前聚合只用最新有效评价</td>
+</tr>
+<tr class="even">
+<td>T20</td>
+<td>失败评价</td>
+<td>能记录真实评价；无评价失败不自动变最低分</td>
+</tr>
+<tr class="odd">
+<td>T21</td>
+<td>修改模型或强度</td>
+<td>旧 Run 和评价仍指向旧行为快照</td>
+</tr>
+<tr class="even">
+<td>T22</td>
+<td>仅修改头像／名称</td>
+<td>不改变模型行为，不重置质量记录</td>
+</tr>
+<tr class="odd">
+<td>T23</td>
+<td>头像一致性</td>
+<td>同 Profile 多实例使用同一头像，ID 可区分</td>
+</tr>
+<tr class="even">
+<td>T24</td>
+<td>敏感信息</td>
+<td>日志、工单、导出中不出现凭据；只暴露授权产物</td>
+</tr>
+<tr class="odd">
+<td>T25</td>
+<td>真实观测</td>
+<td>无采集的成本、CPU、进度和 ETA 不伪造显示</td>
+</tr>
+<tr class="even">
+<td>T26</td>
+<td>产品范围</td>
+<td>无游戏机制、职业人格、初始高级技能配置膨胀</td>
+</tr>
+</tbody>
+</table>
+<p>其中数据归因、评分量表和存储实现属于建议规则；开工时写入小型 ADR
+后再用作具体测试断言。</p>
+<h2 id="可以直接交给开发-agent-的首条任务">可以直接交给开发 Agent
+的首条任务</h2>
+<blockquote>
+<p>阅读本包 README、冻结决策与 AGENTS.md。先完成 M0：在一个固定版本的
+dsh 上验证两套执行配置，以及同 Profile
+两个独立实例的启动、事件收集、取消和结果归因。交付运行时契约说明与可复现测试。不要修改核心产品范围，不做多
+CLI，不写不存在的 SDK 方法，不先建复杂 UI。验证结束后按 M1、M2
+推进。</p>
+</blockquote>
+<h2 id="每个实现阶段的交付记录">每个实现阶段的交付记录</h2>
+<p>写清本次完成项、测试命令与结果、使用的 dsh
+版本、配置差异、未实现项与阻塞。测试没有运行就标为未运行。界面截图只能证明展示，不替代后端验收。</p>
+<p>涉及不可逆外部操作时，先保留显式授权边界，不将发布、合并或删除加入自动重试。运行时版本升级应重复核心契约测试。</p>
+<hr />
+<h1 id="参考与待定">06 · 参考与待定</h1>
+<h2 id="今天调研的项目如何使用">1. 今天调研的项目如何使用</h2>
+<p>本章保留设计借鉴，不重新评测这些项目，也不把前文对主分支的观察当成今后的版本保证。施工前只核对实际依赖所需的接口；不要因为归档了这些项目，就同时引入它们的服务与数据库。</p>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>项目</th>
+<th>保留的参考价值</th>
+<th>当前决策</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>OpenAI Symphony</td>
+<td>工单资格检查、工作区生命周期、重试、状态校对、仓库内工作流政策</td>
+<td>读规范，不把其现有执行服务当作必须依赖</td>
+</tr>
+<tr class="even">
+<td>Paperclip</td>
+<td>工单／Run 分离、领取、持久执行记录、验收与反馈</td>
+<td>不采用完整自治公司模型作为 MVP 基座</td>
+</tr>
+<tr class="odd">
+<td>Vibe Kanban</td>
+<td>executor／profile 变体、工作区、差异审查、外部调用体验</td>
+<td>借鉴执行与审查界面，不绑定其托管服务</td>
+</tr>
+<tr class="even">
+<td>Pi</td>
+<td>SDK 嵌入与可替换运行时边界</td>
+<td>保留为后续候选，第一版不切换</td>
+</tr>
+<tr class="odd">
+<td>dsh</td>
+<td>插件式运行时、会话、工具循环、执行配置与接入路径</td>
+<td>第一阶段唯一运行时；必须固定版本做契约验证</td>
+</tr>
+</tbody>
+</table>
+<p>前文讨论了项目维护变化、试验性模块和草案。它们不是本项目冻结需求；未在此归档操作中重新运行、压力测试或验证所有主分支能力。计划文档与已发布实现需要在施工时分开对待。</p>
+<h2 id="官方参考入口">2. 官方参考入口</h2>
+<p>以下链接是本次对话里使用的参考入口，供 M0
+与后续阅读。保存为参考不代表依赖版本已选定。</p>
+<ul>
+<li>dsh 仓库：https://github.com/deepseek-ai/deepseek-harness</li>
+<li>dsh
+架构：https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/architecture.md</li>
+<li>dsh
+subagent：https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/subagent.md</li>
+<li>dsh SDK
+client：https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/sdk/client/README.md</li>
+<li>dsh SDK
+server：https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/sdk/server/README.md</li>
+<li>Symphony
+规范：https://github.com/openai/symphony/blob/main/SPEC.md</li>
+<li>Paperclip：https://github.com/paperclipai/paperclip</li>
+<li>Paperclip
+heartbeat：https://github.com/paperclipai/paperclip/blob/master/docs/guides/agent-developer/heartbeat-protocol.md</li>
+<li>Paperclip
+反馈：https://github.com/paperclipai/paperclip/blob/master/docs/feedback-voting.md</li>
+<li>Vibe Kanban：https://github.com/BloopAI/vibe-kanban</li>
+<li>Pi：https://github.com/earendil-works/pi</li>
+<li>Pi
+SDK：https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/sdk.md</li>
+</ul>
+<p>这些是源码阅读链接，不是可以复制进 package.json
+的版本号。确切路径或默认分支改变时，以仓库当前发布记录为准。</p>
+<h2 id="尚未拍板的事项">3. 尚未拍板的事项</h2>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>事项</th>
+<th>建议处理</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>仓库名、域名</td>
+<td>产品名已定为 <strong>Lachesis</strong>；仓库建议
+<code>lachesis</code> 或可用变体，域名可用性另行确认</td>
+</tr>
+<tr class="even">
+<td>dsh 精确版本和接口路径</td>
+<td>M0 实测后固定</td>
+</tr>
+<tr class="odd">
+<td>worker 同进程还是独立进程</td>
+<td>以隔离、取消与成本的实际测试决定</td>
+</tr>
+<tr class="even">
+<td>数据库和 UI 技术细节</td>
+<td>先选能复用 dsh 且简单可测的方案</td>
+</tr>
+<tr class="odd">
+<td>默认自动路由策略</td>
+<td>先实现显式指定，再加一个简单策略</td>
+</tr>
+<tr class="even">
+<td>1–5 分、评分维度、权重</td>
+<td>第一版建议单分＋意见＋简单均值，须记录决策</td>
+</tr>
+<tr class="odd">
+<td>多 Profile 联合工单如何归因</td>
+<td>不自动复制评分；先明确主执行配置或拆工单</td>
+</tr>
+<tr class="even">
+<td>模型／强度变更后的跨版本聚合</td>
+<td>建议保留修订并分开展示，具体规则写入 ADR</td>
+</tr>
+<tr class="odd">
+<td>账号额度获取和精确成本</td>
+<td>只支持真实可取得信息；未知就保留未知</td>
+</tr>
+<tr class="even">
+<td>头像批量生成与管理</td>
+<td>后续再做；第一版绑定静态素材</td>
+</tr>
+<tr class="odd">
+<td>GitHub／Linear 等外部工单同步</td>
+<td>后续入口扩展，不是现阶段数据库选择</td>
+</tr>
+<tr class="even">
+<td>Consult 等其他协作模式</td>
+<td>可复用配置与执行能力，但不是本次 MVP 新增目标</td>
+</tr>
+</tbody>
+</table>
+<h2 id="不应从旧图或旧例子继承的默认值">4.
+不应从旧图或旧例子继承的默认值</h2>
+<p>不要默认使用某个过时模型；不要把供应商品牌等同一个账号；不要把
+high／medium／low
+当作所有模型的合法参数；不要把图中人名当真实用户；不要写入虚构评分历史；不要默认拥有原头像的发布权；不要声称已有商业部署或代码成果。</p>
+<h2 id="下一步原则">5. 下一步原则</h2>
+<p>能够安全默认的实现细节写 ADR
+后推进；涉及产品边界、评分归因或真实权限变化的决定，应明确记录而不是隐藏在代码里。保留一个薄执行接口，避免为未来假想的十种
+CLI 建设通用平台。</p>
+<hr />
+<h1 id="施工-agent-指南">施工 Agent 指南</h1>
+<p>本仓库／目录交接的是 <strong>Lachesis</strong>
+的产品与架构基线，不是现成代码。先读
+<code>docs/00_冻结决策.md</code>；最新明确用户要求高于原型图。</p>
+<h2 id="必须保持">必须保持</h2>
+<ul>
+<li>dsh-only；沿用插件式架构；不重写 LLM 调用与工具循环。</li>
+<li>外部主 Agent 能提交任务，工单独立于其主会话生命周期。</li>
+<li>Profile 是可复用配置；多个实例可以来自同一 Profile。</li>
+<li>初期行为配置只有供应商、模型、思考强度；名称和头像只是展示元数据。</li>
+<li>头像绑定 Profile，同 Profile 的实例同头像，用实例 ID 区分。</li>
+<li>评分属于工单，聚合到 Profile；不能按每次 Run 或实例重复刷评分。</li>
+<li>生产力优先，不过度游戏化，不加入 AI 公司组织层级或养成系统。</li>
+<li>「监工台」仅是设计方向词，不得进入产品名、页面名、导航、UI
+文案、包名、仓库名或素材品牌。</li>
+</ul>
+<h2 id="开工顺序">开工顺序</h2>
+<p>先完成 M0，固定 dsh
+版本并验证真实接口，再做数据、单工单闭环、并发恢复、验收评价与
+UI。所有文档中的 Executor 方法、工具名、JSON
+和类型均是应用草案，不是可直接调用的 dsh API。</p>
+<p>实现建议可以调整，但应解释理由并更新
+ADR。未定项不能被说成已经获得用户批准。不能擅自新建公开仓库、发布服务或产生外部付费操作。</p>
+<h2 id="工程约束">工程约束</h2>
+<p>保持 Issue、Run、Instance、Session 与 Profile 的身份分离。不要用主
+Agent
+的内部子任务列表代替持久工单存储。不要通过全局模型切换、共享环境变量修改和进程全局工作目录变化管理并发。</p>
+<p>执行结束只进入待验收。worker
+不自验收、不自评分。幂等、领取、取消、重启校对和迟到结果保护必须可测。文件与日志不得泄露凭据。</p>
+<p>原型中的职业标签、权重、进度百分比、模型名和统计是占位或冲突，不是实现要求；查
+<code>docs/04_UI与原型纠偏.md</code>。</p>
+<h2 id="每次交付">每次交付</h2>
+<p>提供变更摘要、验证命令与真实结果、版本与配置、已知限制以及下个可执行任务。没有测试就写未测试。不要把「模型说完成」或「UI
+展示正常」当完整后端验收。</p>
+<hr />
+<h1 id="参考素材">参考素材</h1>
+<p>施工包只保留用户提供的头像风格参考。旧的四张 UI
+原型因包含过时品牌字样，已从包内和 Google Drive
+素材目录移除；其可取布局与纠偏要求已转写到
+<code>../docs/04_UI与原型纠偏.md</code>。</p>
+<p>「监工台」只允许作为设计方向说明出现在文档中，不得出现在图片品牌、Logo、产品
+UI 或其他非文档素材里。重新制作 UI 原型时统一使用
+<strong>Lachesis</strong>，或在纯线框阶段省略品牌。</p>
+<ul>
+<li><code>05_avatar_style_reference.png</code>：用户提供的头像风格参考，不是已授权生产素材。</li>
+</ul>
+<hr />
+</body>
+</html>

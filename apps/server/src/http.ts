@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { DomainError } from '@lachesis/domain'
-import { WorkspaceError } from '@lachesis/workspace'
+import { DomainError } from '@lachesis/plugin-domain'
+import { WorkspaceError } from '@lachesis/plugin-workspace'
 import { ApplicationError, type LachesisApplication } from './application.js'
 import { AuthError, type AuthStore } from './auth.js'
 

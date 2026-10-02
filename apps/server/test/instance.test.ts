@@ -7,9 +7,13 @@ import { tmpdir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
-import { Service } from '@deepseek-ai/cordis'
+import { Context } from '@deepseek-ai/cordis'
 import { LachesisApplication } from '../src/application.ts'
 import LachesisServer from '../src/plugin.ts'
+import LachesisDomain from '@lachesis/plugin-domain/plugin'
+import LachesisWorkspace from '@lachesis/plugin-workspace/plugin'
+import LachesisHarnessDsh from '@lachesis/plugin-runtime-dsh/plugin'
+import LachesisScheduler from '@lachesis/plugin-scheduler/plugin'
 
 const contender = fileURLToPath(new URL('./instance-contender.mjs', import.meta.url))
 
@@ -78,15 +82,25 @@ test('plugin initialization failure closes the database and releases the data-ro
   const seeded = await LachesisApplication.open(dataRoot)
   await seeded.close()
   await writeFile(join(dataRoot, 'auth.json'), '{invalid')
-  const plugin = Object.create(LachesisServer.prototype) as LachesisServer
-  Reflect.set(plugin, 'ctx', { logger: { error() {} } })
-  Reflect.set(plugin, 'config', { dataRoot, staticRoot: root })
+  // The real plugin stack, so the lease and the database are owned by the same
+  // plugin that owns them in a launched service.
+  const ctx = new Context()
   try {
-    await assert.rejects(plugin[Service.init](), SyntaxError)
+    ctx.provide('webServer', {
+      register: () => () => {},
+      registerFallback: () => () => {},
+    })
+    await ctx.plugin(LachesisHarnessDsh, {})
+    await ctx.plugin(LachesisDomain, { dataRoot })
+    await ctx.plugin(LachesisWorkspace, { dataRoot })
+    await ctx.plugin(LachesisScheduler, { dataRoot })
+    await assert.rejects(async () => { await ctx.plugin(LachesisServer, { staticRoot: root }) },
+      (error: unknown) => error instanceof SyntaxError)
     const afterFailure = await contend(dataRoot)
     assert.equal(afterFailure.code, 0, afterFailure.stderr)
     assert.match(afterFailure.stdout, /acquired/)
   } finally {
+    await ctx.fiber.dispose().catch(() => {})
     await rm(root, { recursive: true, force: true })
   }
 })

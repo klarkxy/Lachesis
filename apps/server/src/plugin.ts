@@ -4,13 +4,13 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { Service, type Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import z from '@deepseek-ai/schemastery'
+import { closeDataRoot } from '@lachesis/plugin-domain'
+import type {} from '@lachesis/plugin-mcp/plugin'
 import { AuthError, AuthStore } from './auth.js'
-import { createMcpHttpHandler } from '@lachesis/mcp'
 import { LachesisApplication } from './application.js'
 import { handleHttpApi } from './http.js'
 
 export interface Config {
-  dataRoot: string
   staticRoot: string
   launchId?: string
 }
@@ -90,10 +90,19 @@ function serveWeb(staticRoot: string, req: IncomingMessage, res: ServerResponse)
   createReadStream(file).pipe(res)
 }
 
+/**
+ * The browser-facing half of the service: session pairing, the JSON API and the
+ * SPA fallback.
+ *
+ * It composes no storage and no harness. `@lachesis/base` supplies the data-root
+ * claim, the domain service, the workspace, the harness and the scheduler, and
+ * this plugin only registers HTTP routes over the operations they expose. The
+ * MCP endpoint is a sibling plugin reading the same `lachesis.operations`
+ * service, so both encodings share one authorization path.
+ */
 export default class LachesisServer extends Service {
-  static inject = ['webServer']
+  static inject = ['webServer', 'lachesis.domain', 'lachesis.scheduler', 'lachesis.dataRoot']
   static Config = z.object({
-    dataRoot: z.string().required(),
     staticRoot: z.string().required(),
     launchId: z.string(),
   })
@@ -103,30 +112,30 @@ export default class LachesisServer extends Service {
   }
 
   async [Service.init](): Promise<void> {
-    const app = await LachesisApplication.open(this.config.dataRoot)
+    const domain = this.ctx.get('lachesis.domain')
+    const supervisor = this.ctx.get('lachesis.scheduler')
+    const lease = this.ctx.get('lachesis.dataRoot')
+    if (!domain) throw new Error('lachesis.domain is unavailable')
+    if (!supervisor) throw new Error('lachesis.scheduler is unavailable')
+    if (!lease) throw new Error('lachesis.dataRoot is unavailable')
+    const app = LachesisApplication.fromServices({
+      domain,
+      supervisor,
+      dataRoot: lease.dataRoot,
+      retain: () => lease.retain(),
+      release: () => closeDataRoot(domain, lease),
+    })
     const routes: Array<() => void> = []
-    let closeMcp: (() => Promise<void>) | null = null
     const cleanup = async () => {
       let failure: unknown
       for (const unregister of routes.splice(0).reverse()) {
         try { unregister() } catch (error) { failure ??= error }
       }
-      const close = closeMcp
-      closeMcp = null
-      try { await close?.() } catch (error) { failure ??= error }
       try { await app.close() } catch (error) { failure ??= error }
       if (failure !== undefined) throw failure
     }
     try {
-    const auth = new AuthStore(app.dataRoot)
-    const mcp = createMcpHttpHandler({
-      authenticate: (req) => auth.authenticateToken(req),
-      invoke: ({ operation, input, actor, idempotencyKey }) => app.invoke(operation, input, {
-        actor,
-        idempotencyKey: idempotencyKey ?? null,
-      }),
-    })
-    closeMcp = () => mcp.close()
+    const auth = new AuthStore(lease.dataRoot)
     if (auth.initialSetupCode) {
       process.stderr.write(`Lachesis first-browser setup code: ${auth.initialSetupCode}\n`)
     }
@@ -214,14 +223,14 @@ export default class LachesisServer extends Service {
       },
     })
     routes.push(api)
-    const mcpRoute = this.ctx.webServer.register({
-      kind: 'prefix',
-      path: '/mcp',
-      handler: (req, res) => mcp.handle(req, res),
-    })
-    routes.push(mcpRoute)
     const fallback = this.ctx.webServer.registerFallback((req, res) => serveWeb(this.config.staticRoot, req, res))
     routes.push(fallback)
+    // Published last: the MCP plugin mounts its route once this service exists,
+    // so the fallback must already be the seat that answers everything else.
+    this.ctx.provide('lachesis.operations', {
+      authenticateToken: (req) => auth.authenticateToken(req),
+      invoke: (operation, input, context) => app.invoke(operation, input, context),
+    })
     app.start()
     this.ctx.effect(() => cleanup, 'lachesisServer.routes')
     } catch (error) {

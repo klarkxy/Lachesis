@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
-import { DomainError, ErrorCode } from '@lachesis/domain'
+import { DomainError, ErrorCode } from '@lachesis/plugin-domain'
 import { LachesisApplication } from '../src/application.ts'
 
 const fixture = fileURLToPath(new URL('./recovery-parent.mjs', import.meta.url))
