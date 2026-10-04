@@ -23,4 +23,5 @@ export const ErrorCode = {
   lateResult: 'late_result',
   forbidden: 'forbidden',
   conflict: 'conflict',
+  diskCapacity: 'disk_capacity',
 } as const

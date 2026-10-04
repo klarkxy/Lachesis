@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { SCHEMA_VERSION } from '../src/schema.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { test } from 'node:test'
 import { DomainError, ErrorCode, hasDependencyCycle, openDomain } from '../src/index.ts'
@@ -15,10 +16,10 @@ import {
 
 test('transactional migration is recorded on the real temp database', (t) => {
   const { domain, databasePath } = openTemp(t)
-  assert.equal(domain.schemaVersion(), 3)
+  assert.equal(domain.schemaVersion(), SCHEMA_VERSION)
   domain.close()
   const again = openDomain({ databasePath, recoverInterrupted: false })
-  assert.equal(again.schemaVersion(), 3)
+  assert.equal(again.schemaVersion(), SCHEMA_VERSION)
   again.close()
 })
 

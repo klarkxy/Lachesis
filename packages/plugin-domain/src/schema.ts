@@ -1,4 +1,27 @@
-export const SCHEMA_VERSION = 3
+export const SCHEMA_VERSION = 4
+
+/** Existing full harness configuration was never recorded; do not fabricate it. */
+export const MIGRATION_V4 = `
+ALTER TABLE issues ADD COLUMN access_mode TEXT NOT NULL DEFAULT 'workspace-write';
+ALTER TABLE issues ADD COLUMN attendance TEXT NOT NULL DEFAULT 'manual';
+ALTER TABLE issues ADD COLUMN isolation_requirement TEXT NOT NULL DEFAULT 'trusted-host';
+ALTER TABLE profile_revisions ADD COLUMN harness_id TEXT;
+ALTER TABLE profile_revisions ADD COLUMN config_json TEXT;
+ALTER TABLE runs ADD COLUMN execution_snapshot TEXT;
+ALTER TABLE runs ADD COLUMN input_binding TEXT;
+CREATE TABLE storage_settings (id INTEGER PRIMARY KEY CHECK (id = 1), policy_json TEXT NOT NULL) STRICT;
+CREATE TABLE storage_reservations (
+  run_id TEXT PRIMARY KEY,
+  generation INTEGER NOT NULL,
+  bytes INTEGER NOT NULL,
+  remaining_bytes INTEGER NOT NULL,
+  execution_base_bytes INTEGER NOT NULL DEFAULT 0,
+  artifact_ready INTEGER NOT NULL DEFAULT 0,
+  published INTEGER NOT NULL DEFAULT 0,
+  operation_exit_confirmed INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+) STRICT;
+`
 
 export const DEFAULT_HARNESS_ID = 'dsh-acp-0.1.7'
 

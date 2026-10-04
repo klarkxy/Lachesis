@@ -26,9 +26,17 @@ import type {
   DispatchReason,
   SchedulerSnapshot,
   UpdateIssuePlanInput,
+  ExecutionSnapshot,
+  RunInputBinding,
+  StoragePolicy,
+  StorageObservation,
+  StorageAdmission,
+  StorageReservation,
+  StorageReservationBackend,
 } from '@lachesis/contracts'
+import { DEFAULT_STORAGE_POLICY } from '@lachesis/contracts'
 import { DomainError, ErrorCode } from './errors.ts'
-import { MIGRATION_V1, MIGRATION_V2, MIGRATION_V3, DEFAULT_HARNESS_ID, SCHEMA_VERSION } from './schema.ts'
+import { MIGRATION_V1, MIGRATION_V2, MIGRATION_V3, MIGRATION_V4, DEFAULT_HARNESS_ID, SCHEMA_VERSION } from './schema.ts'
 import type {
   Actor,
   ApplicationDetail,
@@ -185,6 +193,21 @@ function resolveProfileConfig(
     throw new DomainError(ErrorCode.invalidInput, 'Profile configJson must be a JSON object')
   }
   const config = parseHarnessObject(raw) ?? {}
+  if (isDshHarness(harnessId)) {
+    const allowed = new Set(['providerRef', 'modelId', 'reasoningEffort', 'maxAccessMode', 'maxAttendance', 'boundaryMode'])
+    if (Object.keys(config).some((key) => !allowed.has(key))) {
+      throw new DomainError(ErrorCode.invalidInput, 'Unknown or secret-bearing DSH configuration field')
+    }
+    if (config.maxAccessMode !== undefined && (typeof config.maxAccessMode !== 'string' || !['read-only', 'workspace-write'].includes(config.maxAccessMode))) {
+      throw new DomainError(ErrorCode.invalidInput, 'Invalid Profile maxAccessMode')
+    }
+    if (config.maxAttendance !== undefined && (typeof config.maxAttendance !== 'string' || !['manual', 'bounded-unattended'].includes(config.maxAttendance))) {
+      throw new DomainError(ErrorCode.invalidInput, 'Invalid Profile maxAttendance')
+    }
+    if (config.boundaryMode !== undefined && (typeof config.boundaryMode !== 'string' || !['whole-range', 'native-tools'].includes(config.boundaryMode))) {
+      throw new DomainError(ErrorCode.invalidInput, 'Invalid Profile boundaryMode')
+    }
+  }
   const supplied = (explicit: string | undefined): boolean =>
     explicit !== undefined && (current !== null || explicit.trim().length > 0)
   const providerRef = supplied(input.providerRef) ? (input.providerRef as string) : harnessText(config.providerRef) ?? current?.providerRef ?? ''
@@ -223,6 +246,8 @@ export function hasDependencyCycle(edges: Map<string, readonly string[]>): boole
 
 export class DomainService {
   private readonly db: DatabaseSync
+  private storageAdmissions: Map<Id, StorageAdmission> | null = null
+  private executionPolicySupport: ((policy: { accessMode: 'read-only' | 'workspace-write'; requireFull: boolean; boundaryMode: 'whole-range' | 'native-tools' }) => string | null) | null = null
 
   private constructor(db: DatabaseSync) {
     this.db = db
@@ -418,9 +443,9 @@ export class DomainService {
         createdAt,
       )
       this.db.prepare(
-        `INSERT INTO profile_revisions (profile_id, revision, provider_ref, model_id, reasoning_effort, created_at)
-         VALUES (?, 1, ?, ?, ?, ?)`,
-      ).run(profile.id, profile.providerRef, profile.modelId, profile.reasoningEffort, createdAt)
+        `INSERT INTO profile_revisions (profile_id, revision, provider_ref, model_id, reasoning_effort, created_at, harness_id, config_json)
+         VALUES (?, 1, ?, ?, ?, ?, ?, ?)`,
+      ).run(profile.id, profile.providerRef, profile.modelId, profile.reasoningEffort, createdAt, profile.harnessId, profile.configJson)
     })
     return profile
   }
@@ -513,9 +538,9 @@ export class DomainService {
       }
       if (configChanged) {
         this.db.prepare(
-          `INSERT INTO profile_revisions (profile_id, revision, provider_ref, model_id, reasoning_effort, created_at)
-           VALUES (?, ?, ?, ?, ?, ?)`,
-        ).run(id, revision, next.providerRef, next.modelId, next.reasoningEffort, createdAt)
+          `INSERT INTO profile_revisions (profile_id, revision, provider_ref, model_id, reasoning_effort, created_at, harness_id, config_json)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        ).run(id, revision, next.providerRef, next.modelId, next.reasoningEffort, createdAt, config.harnessId, config.configJson)
       }
       return this.getProfile(id)
     })
@@ -525,6 +550,8 @@ export class DomainService {
     this.getProfile(id)
     return this.db.prepare('SELECT * FROM profile_revisions WHERE profile_id = ? ORDER BY revision ASC').all(id).map((row) => ({
       profileId: asText(row.profile_id),
+      harnessId: asTextOrNull(row.harness_id),
+      configJson: asTextOrNull(row.config_json),
       revision: asInt(row.revision),
       providerRef: asText(row.provider_ref),
       modelId: asText(row.model_id),
@@ -563,6 +590,7 @@ export class DomainService {
   createIssue(actor: Actor, input: CreateIssueInput, idempotency: IdempotencyRef): Issue {
     requireOperator(actor, 'create issues')
     this.assertIssueInput(input)
+    this.assertExecutionPolicy(input)
     return this.withIdempotency(actor, input.projectId, 'issue.create', idempotency, () => {
       const project = this.getProject(input.projectId)
       const dependsOn = [...new Set(input.dependsOn ?? [])]
@@ -595,6 +623,9 @@ export class DomainService {
         dependsOn,
         ownedPaths,
         readOnlyPaths,
+        accessMode: input.accessMode ?? 'workspace-write',
+        attendance: input.attendance ?? 'manual',
+        isolationRequirement: input.isolationRequirement ?? 'trusted-host',
         requesterRef: input.requesterRef,
         clientRequestId: input.clientRequestId ?? null,
         status,
@@ -609,8 +640,8 @@ export class DomainService {
           `INSERT INTO issues (
             id, project_id, title, description, acceptance_criteria, dispatch_mode, dispatch_profile_id,
             requester_ref, client_request_id, status, version, generation, current_run_id, accepted_delivery_id,
-            created_at, updated_at, owned_paths, read_only_paths
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, NULL, NULL, ?, ?, ?, ?)`,
+            created_at, updated_at, owned_paths, read_only_paths, access_mode, attendance, isolation_requirement
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, NULL, NULL, ?, ?, ?, ?, ?, ?, ?)`,
         ).run(
           issue.id,
           issue.projectId,
@@ -626,6 +657,9 @@ export class DomainService {
           createdAt,
           JSON.stringify(ownedPaths),
           JSON.stringify(readOnlyPaths),
+          issue.accessMode!,
+          issue.attendance!,
+          issue.isolationRequirement!,
         )
       } catch (error) {
         if (isUniqueViolation(error) && issue.clientRequestId) {
@@ -660,6 +694,7 @@ export class DomainService {
       const dependsOn = input.dependsOn === undefined ? issue.dependsOn : [...new Set(input.dependsOn)]
       const ownedPaths = input.ownedPaths === undefined ? issue.ownedPaths ?? [] : normalizeScope(input.ownedPaths)
       const readOnlyPaths = input.readOnlyPaths === undefined ? issue.readOnlyPaths ?? [] : normalizeScope(input.readOnlyPaths)
+      this.assertExecutionPolicy(input)
       for (const depId of dependsOn) {
         const dep = this.maybeIssue(depId)
         if (!dep) throw new DomainError(ErrorCode.notFound, 'Dependency issue not found', { dependsOn: depId })
@@ -669,8 +704,10 @@ export class DomainService {
       const status = this.dependenciesSatisfied(dependsOn) ? 'queued' : 'blocked'
       this.db.prepare('DELETE FROM issue_dependencies WHERE issue_id = ?').run(issueId)
       for (const depId of dependsOn) this.db.prepare('INSERT INTO issue_dependencies (issue_id, depends_on) VALUES (?, ?)').run(issueId, depId)
-      this.db.prepare(`UPDATE issues SET owned_paths = ?, read_only_paths = ?, status = ?, version = version + 1,
-        updated_at = ? WHERE id = ?`).run(JSON.stringify(ownedPaths), JSON.stringify(readOnlyPaths), status, nowIso(), issueId)
+      this.db.prepare(`UPDATE issues SET owned_paths = ?, read_only_paths = ?, status = ?, access_mode = ?, attendance = ?,
+        isolation_requirement = ?, version = version + 1, updated_at = ? WHERE id = ?`).run(JSON.stringify(ownedPaths),
+          JSON.stringify(readOnlyPaths), status, input.accessMode ?? issue.accessMode!, input.attendance ?? issue.attendance!,
+          input.isolationRequirement ?? issue.isolationRequirement!, nowIso(), issueId)
       this.emit(issue.projectId, issue.id, null, 'issue.plan_updated', { dependsOn, ownedPaths, readOnlyPaths })
       return this.getIssue(issueId)
     })
@@ -969,7 +1006,7 @@ export class DomainService {
     })
   }
 
-  claimNextReadyIssue(actor: Actor): Claim | null {
+  claimNextReadyIssue(actor: Actor, selectSource?: (project: Project) => string | null): Claim | null {
     if (actor.kind !== 'worker') throw new DomainError(ErrorCode.forbidden, 'Only workers may claim issues')
     return this.tx(() => {
       const projects = this.listProjects().items
@@ -986,7 +1023,8 @@ export class DomainService {
         for (const profile of rotate(profiles, asTextOrNull(cursor.profile_id))) {
           for (const issue of issues) {
             if (this.decisionFor(issue, profile).reason !== 'ready') continue
-            const claim = this.tryClaim(actor, issue, profile, { profileId: profile.id })
+            const claim = this.tryClaim(actor, issue, profile, { profileId: profile.id,
+              ...(selectSource ? { baseRef: selectSource(project) } : {}) })
             if (claim) {
               this.db.prepare('UPDATE scheduler_cursor SET project_id = ?, profile_id = ? WHERE id = 1').run(project.id, profile.id)
               return claim
@@ -1006,6 +1044,158 @@ export class DomainService {
     if (profiles.length === 0) return { issueId, profileId: null, reason: 'profile_unavailable', detail: 'No enabled Profile is available' }
     const decisions = profiles.map((profile) => this.decisionFor(issue, profile))
     return decisions.find((decision) => decision.reason === 'ready') ?? decisions[0]!
+  }
+
+  getStoragePolicy(): StoragePolicy | null {
+    const row = this.db.prepare('SELECT policy_json FROM storage_settings WHERE id = 1').get()
+    return row ? parseJson<StoragePolicy>(row.policy_json) : null
+  }
+
+  storagePolicyDigest(): string {
+    return sha256Json(this.getStoragePolicy() ?? DEFAULT_STORAGE_POLICY)
+  }
+
+  executionSnapshotDigest(runId: Id): string {
+    const snapshot = this.getRun(runId).run.executionSnapshot
+    if (!snapshot) throw new DomainError(ErrorCode.conflict, 'Historical execution configuration is unknown')
+    return sha256Json(snapshot)
+  }
+
+  /** Admission observations are refreshed by the scheduler; refusal creates no Run. */
+  setStorageAdmissions(admissions: Map<Id, StorageAdmission> | null): void {
+    this.storageAdmissions = admissions
+  }
+
+  setExecutionPolicySupport(check: ((policy: { accessMode: 'read-only' | 'workspace-write'; requireFull: boolean; boundaryMode: 'whole-range' | 'native-tools' }) => string | null) | null): void {
+    this.executionPolicySupport = check
+  }
+
+  listStorageReservations(): StorageReservation[] {
+    return this.db.prepare('SELECT * FROM storage_reservations ORDER BY created_at, run_id').all().map((row) => ({
+      runId: asText(row.run_id), generation: asInt(row.generation), bytes: asInt(row.bytes),
+      remainingBytes: asInt(row.remaining_bytes), executionBaseBytes: asInt(row.execution_base_bytes),
+      artifactReady: asInt(row.artifact_ready) === 1, published: asInt(row.published) === 1, createdAt: asText(row.created_at),
+    }))
+  }
+
+  /** Short-lived readiness/integration operations share the same durable reservation table. */
+  reserveStorageOperation(id: Id, admission: StorageAdmission): void {
+    this.tx(() => {
+      if (this.listStorageReservations().some((row) => row.runId === id)) throw new DomainError(ErrorCode.conflict, 'Storage operation already exists')
+      const failure = this.storageAdmissionFailure(admission)
+      if (failure) throw new DomainError(ErrorCode.diskCapacity, failure)
+      this.db.prepare(`INSERT INTO storage_reservations
+        (run_id, generation, bytes, remaining_bytes, created_at) VALUES (?, 0, ?, ?, ?)`)
+        .run(id, admission.requiredBytes, admission.requiredBytes, nowIso())
+    })
+  }
+
+  confirmStorageOperationExit(id: Id): void {
+    this.db.prepare('UPDATE storage_reservations SET operation_exit_confirmed = 1 WHERE run_id = ? AND generation = 0').run(id)
+  }
+
+  private remainingStorageBytes(observation: StorageObservation): number {
+    return this.listStorageReservations().reduce((total, row) => total + Math.max(0,
+      row.remainingBytes - Math.max(0, (observation.runBytes[row.runId] ?? 0) - row.executionBaseBytes)), 0)
+  }
+
+  private storageAdmissionFailure(admission: StorageAdmission | undefined): string | null {
+    if (!admission) return 'Storage admission is awaiting a fresh measurement'
+    const observation = admission.observation
+    const age = Date.now() - Date.parse(observation.observedAt)
+    const policy = this.getStoragePolicy() ?? DEFAULT_STORAGE_POLICY
+    if (!Number.isFinite(age) || age < 0 || age > 10_000 || admission.policyDigest !== sha256Json(policy)) {
+      return 'Storage measurement or policy changed; admission will refresh'
+    }
+    if (![observation.managedBytes, observation.freeBytes, admission.requiredBytes].every((value) => Number.isSafeInteger(value) && value >= 0)) {
+      return 'Storage measurement is unavailable'
+    }
+    const remaining = this.remainingStorageBytes(observation)
+    if (policy.maxManagedBytes !== null && observation.managedBytes + remaining + admission.requiredBytes > policy.maxManagedBytes) {
+      return 'Managed storage budget cannot accommodate this work item'
+    }
+    if (observation.freeBytes - remaining - admission.requiredBytes < policy.minFreeBytes) return 'Volume free space is below the required headroom'
+    return null
+  }
+
+  storageReservationBackend(): StorageReservationBackend {
+    return {
+      list: () => this.listStorageReservations(),
+      acquire: (runId, bytes, observation) => this.tx(() => {
+        const row = this.listStorageReservations().find((item) => item.runId === runId)
+        if (!row) throw new DomainError(ErrorCode.conflict, 'Run must be admitted and reserved with its claim')
+        if (!Number.isSafeInteger(bytes) || bytes < 0) throw new DomainError(ErrorCode.invalidInput, 'Invalid storage reservation')
+        if (bytes <= row.bytes) return row
+        const extra = bytes - row.bytes
+        const policy = this.getStoragePolicy() ?? DEFAULT_STORAGE_POLICY
+        const remaining = this.remainingStorageBytes(observation)
+        if ((policy.maxManagedBytes !== null && observation.managedBytes + remaining + extra > policy.maxManagedBytes) ||
+          observation.freeBytes - remaining - extra < policy.minFreeBytes) {
+          throw new DomainError(ErrorCode.diskCapacity, 'Storage cannot extend the preparation reservation')
+        }
+        this.db.prepare('UPDATE storage_reservations SET bytes = ?, remaining_bytes = remaining_bytes + ? WHERE run_id = ?')
+          .run(bytes, extra, runId)
+        return { ...row, bytes, remainingBytes: row.remainingBytes + extra }
+      }),
+      materialized: (runId, remainingBytes, executionBaseBytes) => {
+        if (![remainingBytes, executionBaseBytes].every((value) => Number.isSafeInteger(value) && value >= 0)) {
+          throw new DomainError(ErrorCode.invalidInput, 'Invalid materialized storage measurement')
+        }
+        const changed = this.db.prepare('UPDATE storage_reservations SET remaining_bytes = ?, execution_base_bytes = ? WHERE run_id = ?')
+          .run(remainingBytes, executionBaseBytes, runId)
+        if (Number(changed.changes) === 0) throw new DomainError(ErrorCode.conflict, 'Storage reservation is missing')
+      },
+      artifactReady: (runId) => {
+        const row = this.db.prepare('SELECT generation, operation_exit_confirmed FROM storage_reservations WHERE run_id = ?').get(runId)
+        const confirmed = row && asInt(row.generation) === 0 ? asInt(row.operation_exit_confirmed) === 1 : this.hasConfirmedRunExit(runId)
+        if (!confirmed) throw new DomainError(ErrorCode.conflict, 'Artifact publication requires confirmed worker exit')
+        this.db.prepare('UPDATE storage_reservations SET artifact_ready = 1, remaining_bytes = 0 WHERE run_id = ?').run(runId)
+      },
+      assertCleanupAllowed: (runId) => this.assertStorageCleanupAllowed(runId),
+      release: (runId) => {
+        this.assertStorageCleanupAllowed(runId)
+        this.db.prepare('DELETE FROM storage_reservations WHERE run_id = ?').run(runId)
+      },
+    }
+  }
+
+  private assertStorageCleanupAllowed(runId: string): void {
+    const row = this.db.prepare('SELECT generation, operation_exit_confirmed, published FROM storage_reservations WHERE run_id = ?').get(runId)
+    if (!row) throw new DomainError(ErrorCode.conflict, 'Storage reservation is missing')
+    if (asInt(row.generation) === 0) {
+      if (asInt(row.operation_exit_confirmed) !== 1) throw new DomainError(ErrorCode.conflict, 'Cannot clean storage for an unconfirmed operation')
+      return
+    }
+    const { run } = this.getRun(runId)
+    const unstarted = run.status === 'starting' && run.startedAt === null && run.sessionId === null
+    if (unstarted) return
+    if (!this.hasConfirmedRunExit(runId)) throw new DomainError(ErrorCode.conflict, 'Cannot clean storage for an unconfirmed worker')
+    if (run.status === 'completed' && asInt(row.published) === 1) return
+    const exit = this.db.prepare(`SELECT data FROM events WHERE run_id = ? AND type = 'run.process_exit'
+      ORDER BY sequence DESC LIMIT 1`).get(runId)
+    const workerNeverStarted = exit && parseJson<{ workerStarted?: unknown }>(exit.data).workerStarted === false
+    const checkpoint = this.db.prepare('SELECT id FROM run_checkpoints WHERE run_id = ?').get(runId)
+    if (['failed', 'cancelled', 'interrupted'].includes(run.status) && (workerNeverStarted || checkpoint)) return
+    throw new DomainError(ErrorCode.conflict, 'Delivery or recovery checkpoint must be committed before cleanup')
+  }
+  saveStoragePolicy(actor: Actor, policy: StoragePolicy): StoragePolicy {
+    requireOperator(actor, 'edit storage policy')
+    const keys = ['maxManagedBytes', 'minFreeBytes', 'defaultRunReserveBytes', 'artifactPublishReserveBytes',
+      'maxCacheBytes', 'executionRetentionHours', 'checkpointRetentionDays']
+    if (!policy || typeof policy !== 'object' || Object.keys(policy).some((key) => !keys.includes(key))) {
+      throw new DomainError(ErrorCode.invalidInput, 'Invalid storage policy')
+    }
+    for (const key of keys) {
+      const value = policy[key as keyof StoragePolicy]
+      if (value === null && ['maxManagedBytes', 'checkpointRetentionDays'].includes(key)) continue
+      if (!Number.isSafeInteger(value) || Number(value) < 0) throw new DomainError(ErrorCode.invalidInput, `Invalid ${key}`)
+    }
+    if (policy.maxCacheBytes !== 0 || policy.executionRetentionHours !== 0 || policy.checkpointRetentionDays !== null) {
+      throw new DomainError(ErrorCode.invalidInput, 'Phase 1 uses private copies, immediate successful-run cleanup and retained recovery checkpoints; cache and timed retention are unavailable')
+    }
+    this.tx(() => this.db.prepare('INSERT INTO storage_settings VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET policy_json = excluded.policy_json')
+      .run(JSON.stringify(policy)))
+    return policy
   }
 
   getSchedulerSnapshot(projectId?: Id): SchedulerSnapshot {
@@ -1055,6 +1245,17 @@ export class DomainService {
     if (recovery) return result('recovery', `Project target requires recovery for application ${recovery.id}`)
     if (issue.dispatch.mode === 'require' && issue.dispatch.profileId !== profile.id) return result('profile_unavailable', 'Issue requires another Profile')
     if (profile.disabled) return result('profile_unavailable', 'Profile is disabled')
+    if (profile.harnessId !== DEFAULT_HARNESS_ID) return result('profile_unavailable', 'Phase 1 supports only the native DSH ACP harness')
+    const config = resolveProfileConfig({}, profile)
+    const capability = JSON.parse(config.configJson) as Record<string, unknown>
+    if (capability.maxAccessMode === 'read-only' && issue.accessMode !== 'read-only') return result('profile_unavailable', 'Profile permits read-only work only')
+    if (capability.maxAttendance === 'manual' && issue.attendance === 'bounded-unattended') return result('profile_unavailable', 'Profile requires manual attendance')
+    if (capability.boundaryMode === 'native-tools' && (issue.accessMode === 'read-only' || issue.isolationRequirement === 'full')) {
+      return result('profile_unavailable', 'Native tools require workspace-write on a trusted host')
+    }
+    const unsupportedPolicy = this.executionPolicySupport?.({ accessMode: issue.accessMode ?? 'workspace-write',
+      requireFull: issue.isolationRequirement === 'full', boundaryMode: capability.boundaryMode === 'native-tools' ? 'native-tools' : 'whole-range' })
+    if (unsupportedPolicy) return result('profile_unavailable', unsupportedPolicy)
     if (!this.dependenciesSatisfied(issue.dependsOn)) return result('dependency', 'Dependencies must be accepted and applied')
     const dispatch = this.getProjectDispatchState(issue.projectId)
     if (dispatch.paused) return result('paused', 'Project dispatch is paused')
@@ -1072,6 +1273,10 @@ export class DomainService {
         return (other.ownedPaths ?? []).some((path) => issue.ownedPaths!.some((own) => scopesOverlap(path, own)))
       })) return result('scope_busy', 'Declared ownership overlaps a running issue')
     }
+    if (this.storageAdmissions !== null) {
+      const failure = this.storageAdmissionFailure(this.storageAdmissions.get(issue.id))
+      if (failure) return result('storage_capacity', failure)
+    }
     return result('ready', 'Ready to claim')
   }
 
@@ -1087,6 +1292,38 @@ export class DomainService {
       ).run(input.sessionId ?? null, input.workspacePath ?? null, input.baseRef ?? null, run.id)
       this.emit(issue.projectId, issue.id, run.id, 'run.bound', { sessionId: input.sessionId ?? null })
       return this.getRun(run.id).run
+    })
+  }
+
+  bindRunInput(_actor: Actor, runId: Id, expectedGeneration: number, binding: RunInputBinding): Run {
+    return this.tx(() => {
+      const { run } = this.requireLiveClaim(runId, expectedGeneration)
+      if (run.inputBinding) throw new DomainError(ErrorCode.conflict, 'Run input is already bound')
+      if (run.status !== 'starting') throw new DomainError(ErrorCode.conflict, 'Input must bind before execution')
+      if (!run.executionSnapshot || binding.executionSnapshotDigest !== sha256Json(run.executionSnapshot)) {
+        throw new DomainError(ErrorCode.invalidInput, 'Input binding does not match the execution snapshot')
+      }
+      if (!/^[a-f0-9]{64}$/.test(binding.materializedDigest) || !['fixed-commit', 'captured-bytes'].includes(binding.captureGuarantee)) {
+        throw new DomainError(ErrorCode.invalidInput, 'Invalid Run input binding')
+      }
+      if (binding.harnessConfigDigest !== undefined && binding.harnessConfigDigest !== null
+        && !/^[a-f0-9]{64}$/.test(binding.harnessConfigDigest)) throw new DomainError(ErrorCode.invalidInput, 'Invalid harness configuration digest')
+      this.db.prepare('UPDATE runs SET input_binding = ? WHERE id = ?').run(JSON.stringify(binding), runId)
+      return this.getRun(runId).run
+    })
+  }
+
+  deferUnstartedRun(_actor: Actor, runId: Id, expectedGeneration: number, diagnostic: string): void {
+    this.tx(() => {
+      const { run, issue } = this.requireLiveClaim(runId, expectedGeneration)
+      if (run.status !== 'starting' || run.startedAt !== null || run.sessionId !== null) {
+        throw new DomainError(ErrorCode.conflict, 'Only unstarted preparation may return to the queue')
+      }
+      const now = nowIso()
+      this.db.prepare("UPDATE runs SET status = 'cancelled', ended_at = ? WHERE id = ?").run(now, runId)
+      this.advanceIssue(issue.id, 'queued', now)
+      this.db.prepare('UPDATE issues SET current_run_id = NULL WHERE id = ?').run(issue.id)
+      this.emit(issue.projectId, issue.id, runId, 'run.preparation_deferred', { diagnostic })
     })
   }
 
@@ -1221,6 +1458,9 @@ export class DomainService {
         throw new DomainError(ErrorCode.lateResult, 'Issue is no longer accepting run results')
       }
       this.assertDelivery(delivery)
+      if (run.executionSnapshot?.accessMode === 'read-only' && delivery.files.length !== 0) {
+        throw new DomainError(ErrorCode.invalidInput, 'Read-only Runs cannot publish project file changes')
+      }
       const createdAt = nowIso()
       const record: Delivery = {
         id: delivery.id ?? newId(),
@@ -1253,6 +1493,7 @@ export class DomainService {
         createdAt,
       )
       this.db.prepare(`UPDATE runs SET status = 'completed', ended_at = ? WHERE id = ?`).run(createdAt, run.id)
+      this.db.prepare('UPDATE storage_reservations SET published = 1 WHERE run_id = ?').run(run.id)
       this.db.prepare(`UPDATE issues SET status = 'awaiting_review', version = version + 1, updated_at = ? WHERE id = ?`).run(createdAt, issue.id)
       this.emit(issue.projectId, issue.id, run.id, 'run.completed', { deliveryId: record.id })
       this.emit(issue.projectId, issue.id, run.id, 'issue.awaiting_review', { deliveryId: record.id })
@@ -1637,6 +1878,10 @@ export class DomainService {
       this.db.exec(MIGRATION_V3)
       this.db.prepare('INSERT INTO schema_migrations (version, applied_at) VALUES (3, ?)').run(nowIso())
     })
+    if (version < 4) this.tx(() => {
+      this.db.exec(MIGRATION_V4)
+      this.db.prepare('INSERT INTO schema_migrations (version, applied_at) VALUES (4, ?)').run(nowIso())
+    })
   }
 
   private tx<T>(fn: () => T): T {
@@ -1652,20 +1897,23 @@ export class DomainService {
     }
   }
 
+  getIdempotencyResult<T>(actor: Actor, projectId: Id, operation: string, ref: IdempotencyRef): T | undefined {
+    if (!ref.key.trim()) throw new DomainError(ErrorCode.invalidInput, 'Idempotency-Key is required')
+    const existing = this.db.prepare(`SELECT body_hash, result_json FROM idempotency
+      WHERE actor_id = ? AND project_id = ? AND operation = ? AND key = ?`).get(actor.id, projectId, operation, ref.key)
+    if (!existing) return undefined
+    if (asText(existing.body_hash) !== sha256Json(ref.body)) {
+      throw new DomainError(ErrorCode.idempotencyConflict, 'Idempotency-Key was reused with a different body')
+    }
+    return JSON.parse(asText(existing.result_json)) as T
+  }
+
   private withIdempotency<T>(actor: Actor, projectId: Id, operation: string, ref: IdempotencyRef, fn: () => T): T {
     if (!ref.key.trim()) throw new DomainError(ErrorCode.invalidInput, 'Idempotency-Key is required')
     return this.tx(() => {
       const hash = sha256Json(ref.body)
-      const existing = this.db.prepare(
-        `SELECT body_hash, result_json FROM idempotency
-         WHERE actor_id = ? AND project_id = ? AND operation = ? AND key = ?`,
-      ).get(actor.id, projectId, operation, ref.key)
-      if (existing) {
-        if (asText(existing.body_hash) !== hash) {
-          throw new DomainError(ErrorCode.idempotencyConflict, 'Idempotency-Key was reused with a different body')
-        }
-        return JSON.parse(asText(existing.result_json)) as T
-      }
+      const existing = this.getIdempotencyResult<T>(actor, projectId, operation, ref)
+      if (existing !== undefined) return existing
       const result = fn()
       this.db.prepare(
         `INSERT INTO idempotency (actor_id, project_id, operation, key, body_hash, result_json, created_at)
@@ -1712,8 +1960,34 @@ export class DomainService {
     ).run(status, now, id)
   }
 
+  private assertExecutionPolicy(input: { accessMode?: unknown; attendance?: unknown; isolationRequirement?: unknown }): void {
+    for (const [value, choices, name] of [
+      [input.accessMode, ['read-only', 'workspace-write'], 'accessMode'],
+      [input.attendance, ['manual', 'bounded-unattended'], 'attendance'],
+      [input.isolationRequirement, ['trusted-host', 'full'], 'isolationRequirement'],
+    ] as const) {
+      if (value !== undefined && !choices.includes(value as never)) {
+        throw new DomainError(ErrorCode.invalidInput, `Invalid ${name}`)
+      }
+    }
+  }
+
   private tryClaim(actor: Actor, issue: Issue, profile: Profile, options: ClaimOptions): Claim | null {
     if (issue.dispatch.mode === 'require' && issue.dispatch.profileId !== profile.id) return null
+    const admission = this.storageAdmissions?.get(issue.id)
+    if (this.storageAdmissions !== null && this.storageAdmissionFailure(admission)) return null
+    const config = resolveProfileConfig({}, profile)
+    const configObject = JSON.parse(config.configJson) as Record<string, unknown>
+    if (configObject.maxAccessMode === 'read-only' && issue.accessMode !== 'read-only') return null
+    if (configObject.maxAttendance === 'manual' && issue.attendance === 'bounded-unattended') return null
+    if (configObject.boundaryMode === 'native-tools' && (issue.accessMode === 'read-only' || issue.isolationRequirement === 'full')) return null
+    const snapshot: ExecutionSnapshot = {
+      schemaVersion: 1, harnessId: config.harnessId, adapterVersion: '0.1.7-alpha.2', config: configObject,
+      accessMode: issue.accessMode ?? 'workspace-write', attendance: issue.attendance ?? 'manual',
+      isolationRequirement: issue.isolationRequirement ?? 'trusted-host', capacityKey: config.providerRef,
+      boundaryMode: configObject.boundaryMode === 'native-tools' ? 'native-tools' : 'whole-range',
+      sourceSelection: { kind: this.getProject(issue.projectId).kind, baseRef: admission?.sourceRef ?? options.baseRef ?? null },
+    }
     const now = nowIso()
     const runId = newId()
     const generation = this.issueGeneration(issue.id) + 1
@@ -1730,8 +2004,8 @@ export class DomainService {
       this.db.prepare(
         `INSERT INTO runs (
           id, issue_id, attempt, status, profile_id, profile_revision, provider_ref, model_id, reasoning_effort,
-          session_id, workspace_path, base_ref, generation, claimed_by, started_at, ended_at
-        ) VALUES (?, ?, ?, 'starting', ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, NULL, NULL)`,
+          session_id, workspace_path, base_ref, generation, claimed_by, started_at, ended_at, execution_snapshot
+        ) VALUES (?, ?, ?, 'starting', ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, NULL, NULL, ?)`,
       ).run(
         runId,
         issue.id,
@@ -1742,10 +2016,14 @@ export class DomainService {
         profile.modelId,
         profile.reasoningEffort,
         workspacePath,
-        options.baseRef ?? null,
+        admission?.sourceRef ?? options.baseRef ?? null,
         generation,
         actor.id,
+        JSON.stringify(snapshot),
       )
+      if (admission) this.db.prepare(`INSERT INTO storage_reservations
+        (run_id, generation, bytes, remaining_bytes, created_at) VALUES (?, ?, ?, ?, ?)`)
+        .run(runId, generation, admission.requiredBytes, admission.requiredBytes, now)
     } catch (error) {
       if (isUniqueViolation(error)) return null
       throw error
@@ -1961,6 +2239,9 @@ export class DomainService {
       dependsOn: this.dependenciesOf(id),
       ownedPaths: parseJson<string[]>(row.owned_paths),
       readOnlyPaths: parseJson<string[]>(row.read_only_paths),
+      accessMode: asText(row.access_mode) as NonNullable<Issue['accessMode']>,
+      attendance: asText(row.attendance) as NonNullable<Issue['attendance']>,
+      isolationRequirement: asText(row.isolation_requirement) as NonNullable<Issue['isolationRequirement']>,
       requesterRef: asText(row.requester_ref),
       clientRequestId: asTextOrNull(row.client_request_id),
       status: asText(row.status) as IssueStatus,
@@ -1988,6 +2269,8 @@ export class DomainService {
       baseRef: asTextOrNull(row.base_ref),
       startedAt: asTextOrNull(row.started_at),
       endedAt: asTextOrNull(row.ended_at),
+      executionSnapshot: row.execution_snapshot ? parseJson<ExecutionSnapshot>(row.execution_snapshot) : null,
+      inputBinding: row.input_binding ? parseJson<RunInputBinding>(row.input_binding) : null,
     }
   }
 

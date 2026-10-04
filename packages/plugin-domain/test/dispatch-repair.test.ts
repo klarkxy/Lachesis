@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { SCHEMA_VERSION } from '../src/schema.ts'
 import { randomUUID } from 'node:crypto'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -20,12 +21,12 @@ test('V1 data migrates in place, and newer schema is rejected', (t) => {
   db.prepare(`INSERT INTO projects (id,name,kind,root_path,created_at) VALUES ('legacy','Legacy','files','C:/legacy','2026-01-01')`).run()
   db.close()
   const domain = openDomain({ databasePath, recoverInterrupted: false })
-  assert.equal(domain.schemaVersion(), 3)
+  assert.equal(domain.schemaVersion(), SCHEMA_VERSION)
   assert.equal(domain.getProject('legacy').name, 'Legacy')
   assert.equal(domain.getProjectDispatchState('legacy').paused, false)
   domain.close()
   const future = new DatabaseSync(databasePath)
-  future.prepare('INSERT INTO schema_migrations VALUES (4, ?)').run('2026-01-02')
+  future.prepare('INSERT INTO schema_migrations VALUES (?, ?)').run(SCHEMA_VERSION + 1, '2026-01-02')
   future.close()
   assert.throws(() => openDomain({ databasePath }), (error: unknown) =>
     error instanceof DomainError && error.code === ErrorCode.conflict)

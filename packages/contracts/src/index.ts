@@ -2,6 +2,97 @@
 export type Id = string
 export type ISODate = string
 export type WorkspaceKind = 'git' | 'files'
+export type AccessMode = 'read-only' | 'workspace-write'
+export type AttendanceMode = 'manual' | 'bounded-unattended'
+export type ExecutionBoundaryMode = 'whole-range' | 'native-tools'
+
+/** Claim-time intent. Historical runs without this field have unknown full configuration. */
+export interface ExecutionSnapshot {
+  schemaVersion: 1
+  harnessId: string
+  adapterVersion: string
+  config: Record<string, unknown>
+  accessMode: AccessMode
+  attendance: AttendanceMode
+  isolationRequirement: 'trusted-host' | 'full'
+  /** Frozen boundary; absent on historical snapshots means unknown. */
+  boundaryMode?: ExecutionBoundaryMode
+  capacityKey: string
+  sourceSelection: { kind: WorkspaceKind; baseRef: string | null }
+}
+
+/** Bound exactly once after preparation and before the first model request. */
+export interface RunInputBinding {
+  executionSnapshotDigest: string
+  baseRef: string | null
+  materializedDigest: string
+  captureGuarantee: 'fixed-commit' | 'captured-bytes'
+  /** Digest only; never embeds provider configuration or credentials. */
+  harnessConfigDigest?: string | null
+  boundAt: ISODate
+}
+
+export interface StoragePolicy {
+  maxManagedBytes: number | null
+  minFreeBytes: number
+  defaultRunReserveBytes: number
+  artifactPublishReserveBytes: number
+  maxCacheBytes: number
+  executionRetentionHours: number
+  checkpointRetentionDays: number | null
+}
+
+export const DEFAULT_STORAGE_POLICY: Readonly<StoragePolicy> = Object.freeze({
+  maxManagedBytes: null, minFreeBytes: 0, defaultRunReserveBytes: 0, artifactPublishReserveBytes: 0,
+  maxCacheBytes: 0, executionRetentionHours: 0, checkpointRetentionDays: null,
+})
+
+export interface StorageStatus {
+  policy: StoragePolicy
+  managedBytes: number
+  freeBytes: number
+  reservedBytes: number
+  activeReservations: number
+  canDispatch: boolean
+  diagnostic: string | null
+}
+
+/** Metadata-only observation; no worker or project contents are exposed. */
+export interface StorageObservation {
+  managedBytes: number
+  freeBytes: number
+  runBytes: Record<Id, number>
+  observedAt: ISODate
+}
+
+export interface StorageAdmission {
+  observation: StorageObservation
+  requiredBytes: number
+  sourceRef: string | null
+  policyDigest: string
+}
+
+export interface StorageReservation {
+  runId: Id
+  generation: number
+  bytes: number
+  /** Remaining future allocation at the most recent preparation milestone. */
+  remainingBytes: number
+  executionBaseBytes: number
+  createdAt: ISODate
+  artifactReady: boolean
+  published: boolean
+}
+
+/** Existing SQLite owns production reservations. Standalone workspace tests may use memory. */
+export interface StorageReservationBackend {
+  list(): StorageReservation[]
+  acquire(runId: Id, bytes: number, observation: StorageObservation): StorageReservation
+  materialized(runId: Id, remainingBytes: number, executionBaseBytes: number): void
+  artifactReady(runId: Id): void
+  assertCleanupAllowed(runId: Id): void
+  release(runId: Id): void
+}
 export type IssueStatus =
   | 'queued' | 'blocked' | 'starting' | 'running' | 'needs_input'
   | 'awaiting_review' | 'accepted' | 'failed' | 'cancelled' | 'recovery_required'
@@ -46,6 +137,8 @@ export interface ProfileRevision {
   modelId: string
   reasoningEffort: string | null
   createdAt: ISODate
+  harnessId?: string | null
+  configJson?: string | null
 }
 
 export interface Dispatch {
@@ -64,6 +157,9 @@ export interface Issue {
   /** Omitted on legacy clients; an empty list means unrestricted scope. */
   ownedPaths?: string[]
   readOnlyPaths?: string[]
+  accessMode?: AccessMode
+  attendance?: AttendanceMode
+  isolationRequirement?: 'trusted-host' | 'full'
   requesterRef: string
   clientRequestId: string | null
   status: IssueStatus
@@ -89,6 +185,8 @@ export interface Run {
   baseRef: string | null
   startedAt: ISODate | null
   endedAt: ISODate | null
+  executionSnapshot?: ExecutionSnapshot | null
+  inputBinding?: RunInputBinding | null
 }
 
 export interface FileChange {
@@ -183,6 +281,9 @@ export interface CreateIssueInput {
   dependsOn?: Id[]
   ownedPaths?: string[]
   readOnlyPaths?: string[]
+  accessMode?: AccessMode
+  attendance?: AttendanceMode
+  isolationRequirement?: 'trusted-host' | 'full'
   requesterRef: string
   clientRequestId?: string
 }
@@ -230,6 +331,7 @@ export interface ProjectDispatchState {
 }
 
 export type DispatchReason = 'ready' | 'dependency' | 'paused' | 'environment' | 'global_capacity'
+  | 'storage_capacity'
   | 'profile_capacity' | 'provider_capacity' | 'profile_unavailable' | 'scope_busy'
   | 'running' | 'needs_input' | 'review' | 'integration' | 'complete' | 'failed' | 'cancelled' | 'recovery'
 
@@ -255,6 +357,9 @@ export interface UpdateIssuePlanInput {
   dependsOn?: Id[]
   ownedPaths?: string[]
   readOnlyPaths?: string[]
+  accessMode?: AccessMode
+  attendance?: AttendanceMode
+  isolationRequirement?: 'trusted-host' | 'full'
 }
 
 /** An unfinished artifact. It cannot be accepted or applied as a Delivery. */

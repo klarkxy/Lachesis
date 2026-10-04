@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { test } from 'node:test'
 import { DomainError, ErrorCode, openDomain } from '../src/index.ts'
-import { DEFAULT_HARNESS_ID, MIGRATION_V1, MIGRATION_V2 } from '../src/schema.ts'
+import { DEFAULT_HARNESS_ID, MIGRATION_V1, MIGRATION_V2, SCHEMA_VERSION } from '../src/schema.ts'
 import { openTemp, operator, profileInput } from './helpers.ts'
 
 function v2Database(t: { after: (fn: () => void) => void }): string {
@@ -42,7 +42,7 @@ test('V3 migration packs legacy ACP fields into config_json', (t) => {
 
   const domain = openDomain({ databasePath, recoverInterrupted: false })
   try {
-    assert.equal(domain.schemaVersion(), 3)
+    assert.equal(domain.schemaVersion(), SCHEMA_VERSION)
 
     const withEffort = domain.getProfile('p-effort')
     assert.equal(withEffort.harnessId, DEFAULT_HARNESS_ID)
