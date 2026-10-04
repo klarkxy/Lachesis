@@ -6,6 +6,7 @@ import { posixJoin, rmRetry } from './fsx.ts'
 import { Git, assertGitRepo, currentBranch, worktreeClean } from './git.ts'
 import { hashFile } from './hash.ts'
 import { loadIntegration, type IntegrationRecord, type TouchedFile } from './integrate.ts'
+import { copyCommits, ensureGitTool } from './objects.ts'
 import { assertAbsolutePath, assertRelativePosix } from './paths.ts'
 import type { ArtifactStore } from './store.ts'
 import type { ApplyInput, ApplyOutcome, Evidence } from './types.ts'
@@ -105,6 +106,21 @@ async function applyGit(
     at: new Date().toISOString(),
   })
   await log(logPath, { op: 'backup-ref', rollbackRef, head })
+
+  if (record.linkedWorktree === false) {
+    try {
+      const tool = await ensureGitTool(store.root, gitBin)
+      await copyCommits(tool, record.integrationPath, projectRoot, [record.resultTarget!])
+    } catch (error) {
+      return finish(store, input, logPath, {
+        status: 'failed',
+        resultTarget: null,
+        diagnostic: error instanceof Error ? error.message : 'Could not copy the service commit into the operator repository',
+        evidence: [life('import service commit', 'failed', error instanceof Error ? error.message : null)],
+        rollbackRef,
+      })
+    }
+  }
 
   const merge = await git.run(['merge', '--ff-only', record.resultTarget!], { allowFailure: true })
   if (merge.code !== 0) {

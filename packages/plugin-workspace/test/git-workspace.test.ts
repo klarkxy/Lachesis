@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict'
-import { readFile, rm, writeFile } from 'node:fs/promises'
+import { access, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { WorkspaceError } from '../src/index.ts'
+import { Git } from '../src/git.ts'
+import { WorkspaceError, isInside } from '../src/index.ts'
 import { commitAll, initGit, makeWorkspace, stopped, verifyNotContaining, write } from './helpers.ts'
 
 test('git: two tickets get independent worktrees pinned to the same commit', { timeout: 60_000 }, async (t) => {
@@ -19,7 +20,12 @@ test('git: two tickets get independent worktrees pinned to the same commit', { t
   assert.equal(a.baseRef, base)
   assert.equal(b.baseRef, base)
   assert.notEqual(a.workspacePath, b.workspacePath)
-  assert.equal(a.workspacePath.startsWith(ctx.storeRoot), true)
+  assert.equal(a.workspacePath.startsWith(ctx.ws.executionRoot), true)
+  assert.equal(isInside(ctx.storeRoot, a.workspacePath), false)
+  assert.equal(isInside(ctx.storeRoot, b.workspacePath), false)
+  const listed = await git.text(['worktree', 'list'])
+  assert.equal(listed.includes(a.workspacePath), false)
+  assert.equal(listed.includes(b.workspacePath), false)
 
   await write(a.workspacePath, 'ticket-a.js', 'A\n')
   await write(b.workspacePath, 'ticket-b.js', 'B\n')
@@ -84,9 +90,11 @@ test('git: rework can undo an inherited edit without retaining it in the deliver
   await write(second.workspacePath, 'keep.txt', 'KEEP\n')
   const undone = await ctx.ws.freezeDelivery({ runId: 'run-second', deliveryId: 'del-second', worker: stopped })
   assert.deepEqual(undone.files, [])
-  assert.equal(await git.text(['show', `${undone.gitCommit}:app.txt`]), 'ORIGINAL')
-  assert.equal(await git.text(['show', `${undone.gitCommit}:keep.txt`]), 'KEEP')
-  assert.notEqual((await git.run(['cat-file', '-e', `${undone.gitCommit}:extra.txt`], { allowFailure: true })).code, 0)
+  const service = new Git('git', ctx.ws.serviceGitDir(ctx.projectRoot))
+  assert.equal(await service.text(['show', `${undone.gitCommit}:app.txt`]), 'ORIGINAL')
+  assert.equal(await service.text(['show', `${undone.gitCommit}:keep.txt`]), 'KEEP')
+  assert.notEqual((await service.run(['cat-file', '-e', `${undone.gitCommit}:extra.txt`], { allowFailure: true })).code, 0)
+  assert.notEqual((await git.run(['cat-file', '-e', `${undone.gitCommit}^{commit}`], { allowFailure: true })).code, 0)
   const integrated = await ctx.ws.integrate({ applicationId: 'app-reverted', deliveryId: 'del-second',
     projectRoot: ctx.projectRoot, targetBranch: 'main', verificationCommand: null })
   assert.equal(integrated.status, 'ready')
@@ -318,21 +326,29 @@ test('git: repeated delivery ID cannot replace manifest or Git ref', { timeout: 
   const base = await commitAll(git, 'init')
   const run = await ctx.ws.prepareRun({ runId: 'run-immutable', kind: 'git', projectRoot: ctx.projectRoot, targetBranch: 'main' })
   await write(run.workspacePath, 'app.js', 'first\n')
+  const service = new Git('git', ctx.ws.serviceGitDir(ctx.projectRoot))
+  const operatorRefs = await git.text(['show-ref'])
+  const orphanRef = 'refs/lachesis/deliveries/orphan-delivery'
+  await service.run(['update-ref', orphanRef, base])
+  await assert.rejects(() => ctx.ws.freezeDelivery({ runId: 'run-immutable', deliveryId: 'orphan-delivery', worker: stopped }),
+    (error: unknown) => error instanceof WorkspaceError && error.code === 'git_failed')
+  assert.equal(await service.text(['rev-parse', orphanRef]), base)
+  await assert.rejects(access(join(ctx.storeRoot, 'deliveries', 'orphan-delivery')))
+  assert.equal(await git.text(['show-ref']), operatorRefs)
+
   const first = await ctx.ws.freezeDelivery({ runId: 'run-immutable', deliveryId: 'del-immutable', worker: stopped })
   const ref = 'refs/lachesis/deliveries/del-immutable'
-  assert.equal(await git.text(['rev-parse', ref]), first.gitCommit)
-  await write(run.workspacePath, 'app.js', 'second\n')
+  assert.equal(await service.text(['rev-parse', ref]), first.gitCommit)
+  assert.equal(await git.text(['show-ref']), operatorRefs)
+  await access(run.workspacePath)
+  const bytes = await ctx.ws.readDeliveryFile('del-immutable', 'app.js')
+  assert.equal(Buffer.from(bytes.bytes).toString('utf8'), 'first\n')
   await assert.rejects(() => ctx.ws.freezeDelivery({ runId: 'run-immutable', deliveryId: 'del-immutable', worker: stopped }),
     (error: unknown) => error instanceof WorkspaceError && error.code === 'invalid_id')
   const manifest = JSON.parse(await readFile(join(ctx.storeRoot, 'deliveries', 'del-immutable', 'manifest.json'), 'utf8'))
   assert.deepEqual(manifest, first)
-  assert.equal(await git.text(['rev-parse', ref]), first.gitCommit)
-
-  const orphanRef = 'refs/lachesis/deliveries/orphan-delivery'
-  await git.run(['update-ref', orphanRef, base])
-  await assert.rejects(() => ctx.ws.freezeDelivery({ runId: 'run-immutable', deliveryId: 'orphan-delivery', worker: stopped }),
-    (error: unknown) => error instanceof WorkspaceError && error.code === 'git_failed')
-  assert.equal(await git.text(['rev-parse', orphanRef]), base)
+  assert.equal(await service.text(['rev-parse', ref]), first.gitCommit)
+  assert.notEqual((await git.run(['rev-parse', '--verify', ref], { allowFailure: true })).code, 0)
 })
 
 test('git: freeze without a stop proof is refused', { timeout: 30_000 }, async (t) => {

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFile, symlink, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { test } from 'node:test'
-import { checkDeliveryScope } from '../src/index.ts'
+import { WorkspaceError, checkDeliveryScope } from '../src/index.ts'
 import { spawnArgv } from '../src/spawn.ts'
 import { makeWorkspace, stopped, write } from './helpers.ts'
 
@@ -85,10 +85,16 @@ test('legacy candidate requires reprepare and rework refuses a modified baseline
   assert.equal(applied.status, 'failed')
   assert.match(applied.diagnostic ?? '', /reprepare|new candidate/i)
   assert.equal(await readFile(join(ctx.projectRoot, 'app.txt'), 'utf8'), 'base')
-  await write(run.baselinePath!, 'app.txt', 'tampered')
+  assert.ok(run.baselineId)
+  const captured = JSON.parse(await readFile(join(ctx.storeRoot, 'baselines', run.baselineId, 'manifest.json'), 'utf8')) as {
+    files: { path: string; sha256: string }[]
+  }
+  const baselineFile = captured.files.find((entry) => entry.path === 'app.txt')
+  assert.ok(baselineFile)
+  await writeFile(ctx.ws.blobPath(baselineFile.sha256), 'tampered')
   await assert.rejects(() => ctx.ws.prepareRun({ runId: 'run-rework', kind: 'files',
     projectRoot: ctx.projectRoot, targetBranch: null, seedDeliveryId: 'del-legacy' }),
-  /baseline no longer matches/)
+  (error: unknown) => error instanceof WorkspaceError && error.code === 'store_corrupt')
 })
 
 test('snapshot refuses linked managed files before copying', async (t) => {

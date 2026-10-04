@@ -14,6 +14,9 @@ export type WorkspaceErrorCode =
   | 'recovery_required'
   | 'verification_failed'
   | 'store_corrupt'
+  | 'disk_capacity'
+  | 'storage_unavailable'
+  | 'storage_full'
 
 export class WorkspaceError extends Error {
   readonly code: WorkspaceErrorCode

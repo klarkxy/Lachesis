@@ -2,10 +2,13 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import type { Evidence } from './types.ts'
 import { WorkspaceError } from './errors.ts'
+import { materializeFilesBaseline } from './baseline.ts'
 import { copyTree, emptyDirKeepGit, posixJoin, rmRetry } from './fsx.ts'
 import { Git, assertGitRepo, resolveBranchCommit } from './git.ts'
 import { hashFile } from './hash.ts'
 import { loadDeliveryRun, loadManifest } from './freeze.ts'
+import { copyCommits, ensureGitTool, hasCommit, initWorkRepo, serviceGitPath } from './objects.ts'
+import type { RunRecord } from './prepare.ts'
 import type { ArtifactStore } from './store.ts'
 import type { FileChange, FrozenManifest, IntegrateInput, IntegrationOutcome } from './types.ts'
 import { runVerification } from './verify.ts'
@@ -33,6 +36,8 @@ export interface IntegrationRecord {
   touched: TouchedFile[]
   diagnostic: string | null
   targetDigest?: string
+  /** False when the candidate repo is private to the artifact store. Absent means a legacy operator worktree. */
+  linkedWorktree?: boolean
 }
 
 export async function integrate(
@@ -48,9 +53,9 @@ export async function integrate(
   await mkdir(join(store.integrationDir(input.applicationId)), { recursive: true })
 
   if (manifest.kind === 'git') {
-    return integrateGit(store, gitBin, input, manifest, projectRoot, integrationPath)
+    return integrateGit(store, gitBin, input, manifest, run, projectRoot, integrationPath)
   }
-  return integrateFiles(store, gitBin, input, manifest, run.baselinePath, projectRoot, integrationPath)
+  return integrateFiles(store, gitBin, input, manifest, run, projectRoot, integrationPath)
 }
 
 export async function loadIntegration(store: ArtifactStore, applicationId: string): Promise<IntegrationRecord> {
@@ -62,6 +67,7 @@ async function integrateGit(
   gitBin: string,
   input: IntegrateInput,
   manifest: FrozenManifest,
+  run: RunRecord,
   projectRoot: string,
   integrationPath: string,
 ): Promise<IntegrationOutcome> {
@@ -69,11 +75,26 @@ async function integrateGit(
   const git = new Git(gitBin, projectRoot)
   await assertGitRepo(git)
   const latest = await resolveBranchCommit(git, input.targetBranch)
-  await git.run(['worktree', 'remove', '--force', integrationPath], { allowFailure: true })
-  await git.run(['worktree', 'prune'], { allowFailure: true })
-  await rmRetry(integrationPath).catch(() => undefined)
-  await git.run(['worktree', 'add', '--detach', integrationPath, latest.commit])
+  const phase1 = run.layout === 'phase1'
+  if (phase1) {
+    const tool = await ensureGitTool(store.root, gitBin)
+    const bare = run.serviceGit ?? serviceGitPath(store.root, run.projectRoot)
+    if (!(await hasCommit(tool, bare, manifest.gitCommit))) {
+      throw new WorkspaceError('store_corrupt', 'Delivery commit is not retained in the service repository')
+    }
+    await rmRetry(integrationPath).catch(() => undefined)
+    await initWorkRepo(tool, integrationPath)
+    await copyCommits(tool, projectRoot, integrationPath, [latest.commit])
+    await copyCommits(tool, bare, integrationPath, [manifest.gitCommit])
+  } else {
+    await git.run(['worktree', 'remove', '--force', integrationPath], { allowFailure: true })
+    await git.run(['worktree', 'prune'], { allowFailure: true })
+    await rmRetry(integrationPath).catch(() => undefined)
+    await git.run(['worktree', 'add', '--detach', integrationPath, latest.commit])
+  }
   const ig = new Git(gitBin, integrationPath)
+  if (phase1) await ig.run(['checkout', '--detach', latest.commit])
+  const linkedWorktree = !phase1
   const merge = await ig.run(['merge', '--no-edit', '--no-ff', manifest.gitCommit], { allowFailure: true })
   const conflictPaths = await unmergedPaths(ig)
   const evidence: Evidence[] = [{
@@ -93,6 +114,7 @@ async function integrateGit(
       evidence,
       conflictPaths,
       touched: [],
+      linkedWorktree,
     })
   }
 
@@ -106,6 +128,7 @@ async function integrateGit(
       evidence,
       conflictPaths: [],
       touched: [],
+      linkedWorktree,
     })
   }
 
@@ -124,6 +147,7 @@ async function integrateGit(
       evidence,
       conflictPaths: [],
       touched: [],
+      linkedWorktree,
     })
   }
   return persistOutcome(store, input, manifest, projectRoot, integrationPath, {
@@ -135,6 +159,7 @@ async function integrateGit(
     evidence,
     conflictPaths: [],
     touched: [],
+    linkedWorktree,
   })
 }
 
@@ -143,13 +168,14 @@ async function integrateFiles(
   gitBin: string,
   input: IntegrateInput,
   manifest: FrozenManifest,
-  baselinePath: string | null,
+  run: RunRecord,
   projectRoot: string,
   integrationPath: string,
 ): Promise<IntegrationOutcome> {
-  if (!baselinePath) throw new WorkspaceError('store_corrupt', 'Files delivery is missing a baseline')
   await mkdir(integrationPath, { recursive: true })
-  await copyTree(baselinePath, integrationPath)
+  if (run.baselineId) await materializeFilesBaseline(store, run.baselineId, integrationPath)
+  else if (run.baselinePath) await copyTree(run.baselinePath, integrationPath)
+  else throw new WorkspaceError('store_corrupt', 'Files delivery is missing a baseline')
   const git = new Git(gitBin, integrationPath)
   await git.run(['init', '-b', 'lachesis'])
   await git.run(['config', 'core.autocrlf', 'false'])
@@ -250,6 +276,7 @@ async function persistOutcome(
   integrationPath: string,
   partial: Omit<IntegrationRecord, 'applicationId' | 'deliveryId' | 'kind' | 'projectRoot' | 'integrationPath'> & {
     evidence: Evidence[]
+    linkedWorktree?: boolean
   },
 ): Promise<IntegrationOutcome> {
   const record: IntegrationRecord = {
@@ -266,6 +293,7 @@ async function persistOutcome(
     touched: partial.touched,
     diagnostic: partial.diagnostic,
     ...(partial.targetDigest ? { targetDigest: partial.targetDigest } : {}),
+    ...(partial.linkedWorktree === undefined ? {} : { linkedWorktree: partial.linkedWorktree }),
   }
   await store.writeJson(join(store.integrationDir(input.applicationId), 'meta.json'), record)
   await store.writeJson(join(store.integrationDir(input.applicationId), 'evidence.json'), partial.evidence)

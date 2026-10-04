@@ -4,14 +4,22 @@ import type {
   FileChange,
   WorkspaceKind,
 } from '@lachesis/contracts'
+import type { StoragePolicy } from './ledger.ts'
 
 export type { ApplicationStatus, Evidence, FileChange, WorkspaceKind }
 
 export interface WorkspaceOptions {
   /** Absolute directory for worktrees, snapshots, immutable blobs, logs, and backups. */
   storeRoot: string
+  /**
+   * Worker directories. Defaults to a sibling `execution` directory of the artifact store,
+   * never inside it.
+   */
+  executionRoot?: string
   /** Git executable. Default `git` (looked up on PATH; Windows also tries `.exe`). */
   gitBin?: string
+  /** Partial policy overrides. Missing fields use the permissive phase-1 defaults. */
+  storagePolicy?: Partial<StoragePolicy> | null
 }
 
 export interface WorkerStopProof {
@@ -36,6 +44,24 @@ export interface PrepareRunInput {
   targetBranch: string | null
   /** Rework starts from the immutable accepted delivery in a fresh Run. */
   seedDeliveryId?: string
+  /**
+   * Claim-pinned git commit. Estimates and prepare use this commit instead of
+   * resolving `targetBranch` again. `targetBranch` stays the branch name.
+   */
+  pinnedBaseRef?: string
+}
+
+export interface RunReservationQuery {
+  kind: WorkspaceKind
+  projectRoot: string
+  targetBranch: string | null
+  seedDeliveryId?: string
+  pinnedBaseRef?: string
+}
+
+export interface RunReservationEstimate {
+  requiredBytes: number
+  sourceRef: string | null
 }
 
 export interface PreparedWorkspace {
@@ -47,6 +73,13 @@ export interface PreparedWorkspace {
   targetBranch: string | null
   projectRoot: string
   baselinePath: string | null
+  /** Content-addressed files baseline. Null for git runs and legacy directory baselines. */
+  baselineId?: string | null
+  /** `execution/<runId>`. Owns the sandbox box and its separate SDK temporary grant. */
+  executionPath?: string
+  homePath?: string
+  tmpPath?: string
+  outputPath?: string
 }
 
 export interface FreezeDeliveryInput {
@@ -70,9 +103,11 @@ export interface FrozenManifest {
   files: FileChange[]
   filtered: FilteredPath[]
   manifestSha256: string
-  /** Git object created with commit-tree; files kind uses a sandbox commit. */
+  /** Git object created with commit-tree in the service repository. */
   gitCommit: string | null
   createdAt: string
+  /** Best effort actually achieved. Absent on legacy manifests. */
+  durability?: 'file-sync' | 'directory-sync'
 }
 
 export interface IntegrateInput {

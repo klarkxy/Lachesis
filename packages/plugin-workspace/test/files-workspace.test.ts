@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { readFile, rm } from 'node:fs/promises'
+import { access, readFile, readdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { makeWorkspace, stopped, verifyNotContaining, write } from './helpers.ts'
@@ -59,7 +59,7 @@ test('files: rework retains the original merge base and conflicts with external 
   await write(ctx.projectRoot, 'app.txt', 'external\n')
   const second = await ctx.ws.prepareRun({ runId: 'run-second', kind: 'files', projectRoot: ctx.projectRoot,
     targetBranch: null, seedDeliveryId: 'del-first' })
-  assert.equal(await readFile(join(second.baselinePath!, 'app.txt'), 'utf8'), 'original\n')
+  assert.equal(Buffer.from(await ctx.ws.readBaselineBytes(second.runId, 'app.txt')).toString('utf8'), 'original\n')
   assert.equal(await readFile(join(second.workspacePath, 'app.txt'), 'utf8'), 'worker\n')
   await ctx.ws.freezeDelivery({ runId: 'run-second', deliveryId: 'del-second', worker: stopped })
   const result = await ctx.ws.integrate({ applicationId: 'app-rework-conflict', deliveryId: 'del-second',
@@ -289,3 +289,63 @@ test('files: apply compares original hashes, backups, restores on verify failure
   assert.ok(missingVerifier.evidence.some((item) => item.kind === 'verification' && item.outcome === 'failed'))
   assert.equal(await readFile(join(ctx3.projectRoot, 'app.js'), 'utf8'), 'base\n')
 })
+
+test('files: sensitive source files stay out of the baseline and the worker view', { timeout: 60_000 }, async (t) => {
+  const ctx = await makeWorkspace('lachesis-files-secret-')
+  t.after(ctx.cleanup)
+  const secret = 'SECRET=fake\n'
+  await write(ctx.projectRoot, 'app.js', 'v1\n')
+  await write(ctx.projectRoot, '.env', secret)
+  await write(ctx.projectRoot, 'config/.env.local', secret)
+  await write(ctx.projectRoot, 'secrets/id_ed25519', 'PRIVATE\n')
+  const prepared = await ctx.ws.prepareRun({
+    runId: 'run-secret', kind: 'files', projectRoot: ctx.projectRoot, targetBranch: null,
+  })
+  assert.ok(prepared.baselineId)
+  await assert.rejects(access(join(prepared.workspacePath, '.env')))
+  await assert.rejects(access(join(prepared.workspacePath, 'config', '.env.local')))
+  await assert.rejects(access(join(prepared.workspacePath, 'secrets', 'id_ed25519')))
+  assert.equal(await readFile(join(prepared.workspacePath, 'app.js'), 'utf8'), 'v1\n')
+  const manifest = JSON.parse(await readFile(join(ctx.storeRoot, 'baselines', prepared.baselineId, 'manifest.json'), 'utf8')) as {
+    files: { path: string }[]
+  }
+  assert.equal(manifest.files.some((file) => file.path === '.env' || file.path.endsWith('.env.local') || file.path.endsWith('id_ed25519')), false)
+  assert.equal(await treeContains(join(ctx.storeRoot, 'blobs'), secret), false)
+  assert.equal(await treeContains(join(ctx.storeRoot, 'baselines'), secret), false)
+  assert.equal(await treeContains(prepared.executionPath ?? prepared.workspacePath, secret), false)
+  await assert.rejects(() => ctx.ws.readBaselineBytes('run-secret', '.env'))
+
+  await write(prepared.workspacePath, 'app.js', 'v2\n')
+  const frozen = await ctx.ws.freezeDelivery({ runId: 'run-secret', deliveryId: 'del-secret', worker: stopped })
+  assert.equal(frozen.files.some((file) => file.path === 'app.js' && file.kind === 'modified'), true)
+  assert.equal(frozen.files.some((file) => file.kind === 'deleted' && (file.path === '.env' || file.path.includes('.env') || file.path.includes('id_ed25519'))), false)
+  const integrated = await ctx.ws.integrate({
+    applicationId: 'app-secret', deliveryId: 'del-secret', projectRoot: ctx.projectRoot, targetBranch: null, verificationCommand: null,
+  })
+  assert.equal(integrated.status, 'ready')
+  const applied = await ctx.ws.apply({
+    applicationId: 'app-secret', expectedTarget: integrated.expectedTarget, verificationCommand: null,
+  })
+  assert.equal(applied.status, 'applied')
+  assert.equal(await readFile(join(ctx.projectRoot, 'app.js'), 'utf8'), 'v2\n')
+  assert.equal(await readFile(join(ctx.projectRoot, '.env'), 'utf8'), secret)
+  assert.equal(await readFile(join(ctx.projectRoot, 'config', '.env.local'), 'utf8'), secret)
+  assert.equal(await readFile(join(ctx.projectRoot, 'secrets', 'id_ed25519'), 'utf8'), 'PRIVATE\n')
+})
+
+async function treeContains(root: string, needle: string): Promise<boolean> {
+  const needleBytes = Buffer.from(needle)
+  const stack = [root]
+  while (stack.length > 0) {
+    const dir = stack.pop()
+    if (!dir) continue
+    let entries
+    try { entries = await readdir(dir, { withFileTypes: true }) } catch { continue }
+    for (const entry of entries) {
+      const path = join(dir, entry.name)
+      if (entry.isDirectory()) stack.push(path)
+      else if (entry.isFile() && (await readFile(path)).includes(needleBytes)) return true
+    }
+  }
+  return false
+}

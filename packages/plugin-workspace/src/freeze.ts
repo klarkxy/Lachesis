@@ -1,24 +1,90 @@
-import { mkdir, readFile } from 'node:fs/promises'
+import { mkdir, readFile, rename } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
+import { diffAgainstBaseline, loadBaseline } from './baseline.ts'
 import { WorkspaceError } from './errors.ts'
 import { gitIgnoredPaths, isSensitivePath } from './filter.ts'
 import { Git } from './git.ts'
-import { hashFile, looksBinary } from './hash.ts'
-import { rmRetry } from './fsx.ts'
+import { diffGitWork } from './git-work.ts'
+import { hashFile, looksBinary, manifestSha256 } from './hash.ts'
+import { rmRetry, syncDirectory, writeDurable, type DurabilityLevel } from './fsx.ts'
+import type { StorageLedger } from './ledger.ts'
+import { commitDeliveryTree, ensureGitTool, pinRef, serviceGitPath } from './objects.ts'
 import { assertSafeId, toPosix } from './paths.ts'
+import { saveRun, type RunRecord } from './prepare.ts'
 import type { ArtifactStore } from './store.ts'
 import type { FileChange, FilteredPath, FrozenManifest, FreezeDeliveryInput } from './types.ts'
 import { walkFiles } from './walk.ts'
 import { assertWorkerStopped } from './worker.ts'
-import type { RunRecord } from './prepare.ts'
 
 export async function freezeDelivery(
   store: ArtifactStore,
   gitBin: string,
   run: RunRecord,
   input: FreezeDeliveryInput,
+  ledger?: StorageLedger,
 ): Promise<FrozenManifest> {
   await assertWorkerStopped(input.worker)
+  if (run.layout === 'phase1') {
+    if (!ledger) throw new WorkspaceError('storage_unavailable', 'Phase 1 publication requires the storage ledger')
+    return publishPhase1(store, gitBin, run, input, ledger)
+  }
+  return publishLegacy(store, gitBin, run, input)
+}
+
+async function publishPhase1(
+  store: ArtifactStore,
+  gitBin: string,
+  run: RunRecord,
+  input: FreezeDeliveryInput,
+  ledger: StorageLedger,
+): Promise<FrozenManifest> {
+  const deliveryId = assertSafeId('deliveryId', input.deliveryId)
+  await assertDeliveryAvailable(store, deliveryId)
+  await ledger.assertHeld()
+  const { files, filtered } = await collectChanges(store, gitBin, run)
+  let gitCommit: string | null = null
+  if (run.kind === 'git') {
+    if (!run.baseRef) throw new WorkspaceError('store_corrupt', 'Git run is missing baseRef')
+    const tool = await ensureGitTool(store.root, gitBin)
+    const bare = run.serviceGit ?? serviceGitPath(store.root, run.projectRoot)
+    gitCommit = await commitDeliveryTree(
+      tool,
+      bare,
+      run.baseRef,
+      run.originBaseRef ?? run.baseRef,
+      files,
+      deliveryId,
+      join(store.runDir(run.runId), `delivery-${deliveryId}.index`),
+      store,
+    )
+    await pinRef(tool, bare, `refs/lachesis/deliveries/${deliveryId}`, gitCommit)
+  }
+  const manifest: FrozenManifest = {
+    deliveryId,
+    runId: run.runId,
+    kind: run.kind,
+    baseRef: run.baseRef,
+    originBaseRef: run.kind === 'git' ? (run.originBaseRef ?? run.baseRef) : null,
+    files,
+    filtered,
+    manifestSha256: manifestSha256(files),
+    gitCommit,
+    createdAt: new Date().toISOString(),
+  }
+  const published = await publishSnapshot(store, store.deliveryDir(deliveryId), store.stagingDir(deliveryId), manifest, run)
+  // Artifact-ready keeps the reservation and the execution directory.
+  // Domain.completeRun records the committed delivery. disposeRun is the release.
+  await ledger.markPublished(run.runId)
+  await saveRun(store, { ...run, publishedDeliveryId: deliveryId })
+  return published
+}
+
+async function publishLegacy(
+  store: ArtifactStore,
+  gitBin: string,
+  run: RunRecord,
+  input: FreezeDeliveryInput,
+): Promise<FrozenManifest> {
   const deliveryId = assertSafeId('deliveryId', input.deliveryId)
   const dir = store.deliveryDir(deliveryId)
   await mkdir(dirname(dir), { recursive: true })
@@ -53,12 +119,25 @@ export async function freezeDelivery(
   return manifest
 }
 
+async function readPublication<T>(store: ArtifactStore, id: string, fileName: string): Promise<T> {
+  try {
+    return await store.readJson<T>(join(store.deliveryDir(id), fileName))
+  } catch (error) {
+    if (!(error instanceof WorkspaceError) || error.code !== 'not_found') throw error
+    return store.readJson<T>(join(store.checkpointDir(id), fileName))
+  }
+}
+
 export async function loadManifest(store: ArtifactStore, deliveryId: string): Promise<FrozenManifest> {
-  return store.readJson<FrozenManifest>(join(store.deliveryDir(deliveryId), 'manifest.json'))
+  const manifest = await readPublication<FrozenManifest>(store, deliveryId, 'manifest.json')
+  if (manifest.manifestSha256 !== manifestSha256(manifest.files ?? [])) {
+    throw new WorkspaceError('store_corrupt', `Delivery ${deliveryId} manifest does not match its files`)
+  }
+  return manifest
 }
 
 export async function loadDeliveryRun(store: ArtifactStore, deliveryId: string): Promise<RunRecord> {
-  return store.readJson<RunRecord>(join(store.deliveryDir(deliveryId), 'run.json'))
+  return readPublication<RunRecord>(store, deliveryId, 'run.json')
 }
 
 async function collectChanges(
@@ -66,12 +145,114 @@ async function collectChanges(
   gitBin: string,
   run: RunRecord,
 ): Promise<{ files: FileChange[]; filtered: FilteredPath[] }> {
+  if (run.layout === 'phase1' && run.kind === 'git') {
+    const origin = run.originBaseRef ?? run.baseRef
+    if (!origin) throw new WorkspaceError('store_corrupt', 'Git run is missing baseRef')
+    const tool = await ensureGitTool(store.root, gitBin)
+    return diffGitWork(store, tool, gitBin, run.serviceGit ?? serviceGitPath(store.root, run.projectRoot), origin, run.workspacePath)
+  }
+  if (run.layout === 'phase1' && run.kind === 'files' && run.baselineId) {
+    return diffAgainstBaseline(store, gitBin, await loadBaseline(store, run.baselineId), run.workspacePath)
+  }
   if (run.kind === 'git') return collectGitDiff(store, gitBin, run)
   if (run.kind === 'files') {
     if (!run.baselinePath) throw new WorkspaceError('store_corrupt', 'Files run is missing a baseline path')
     return collectFilesDiff(store, gitBin, run)
   }
   throw new WorkspaceError('unsupported_kind', `Unsupported kind ${String(run.kind)}`)
+}
+
+async function assertDeliveryAvailable(store: ArtifactStore, deliveryId: string): Promise<void> {
+  const { access } = await import('node:fs/promises')
+  try {
+    await access(store.deliveryDir(deliveryId))
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+    throw error
+  }
+  throw new WorkspaceError('invalid_id', `Delivery ${deliveryId} already exists`)
+}
+
+async function publishSnapshot(
+  store: ArtifactStore,
+  dest: string,
+  staging: string,
+  manifest: FrozenManifest,
+  run: RunRecord,
+): Promise<FrozenManifest> {
+  await rmRetry(staging).catch(() => undefined)
+  await mkdir(staging, { recursive: true })
+  let durability: DurabilityLevel = await writeDurable(join(staging, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`)
+  const recorded: FrozenManifest = { ...manifest, durability }
+  durability = await writeDurable(join(staging, 'manifest.json'), `${JSON.stringify(recorded, null, 2)}\n`)
+  recorded.durability = durability
+  if (durability !== manifest.durability) {
+    await writeDurable(join(staging, 'manifest.json'), `${JSON.stringify(recorded, null, 2)}\n`)
+  }
+  await writeDurable(join(staging, 'run.json'), `${JSON.stringify(run, null, 2)}\n`)
+  await mkdir(dirname(dest), { recursive: true })
+  try {
+    await rename(staging, dest)
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    if (code === 'EEXIST' || code === 'ENOTEMPTY') {
+      throw new WorkspaceError('invalid_id', `Delivery ${manifest.deliveryId} already exists`)
+    }
+    const mapped = code === 'ENOSPC' || code === 'EDQUOT'
+      ? new WorkspaceError('storage_full', 'Storage filled during publication. The delivery was not published.')
+      : error
+    throw mapped
+  }
+  await syncDirectory(dirname(dest))
+  const readBack = await store.readJson<FrozenManifest>(join(dest, 'manifest.json'))
+  if (readBack.manifestSha256 !== manifestSha256(readBack.files ?? [])) {
+    throw new WorkspaceError('store_corrupt', 'Published manifest hash does not match its files')
+  }
+  return readBack
+}
+
+export async function writeCheckpoint(
+  store: ArtifactStore,
+  gitBin: string,
+  run: RunRecord,
+  checkpointId: string,
+  ledger: StorageLedger,
+): Promise<FrozenManifest> {
+  const id = assertSafeId('checkpointId', checkpointId)
+  await ledger.assertHeld()
+  const dest = store.checkpointDir(id)
+  const { access } = await import('node:fs/promises')
+  try {
+    await access(dest)
+    throw new WorkspaceError('invalid_id', `Checkpoint ${id} already exists`)
+  } catch (error) {
+    if (error instanceof WorkspaceError) throw error
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+  }
+  const { files, filtered } = await collectChanges(store, gitBin, run)
+  let gitCommit: string | null = null
+  if (run.kind === 'git' && run.baseRef) {
+    const tool = await ensureGitTool(store.root, gitBin)
+    const bare = run.serviceGit ?? serviceGitPath(store.root, run.projectRoot)
+    gitCommit = await commitDeliveryTree(
+      tool, bare, run.baseRef, run.originBaseRef ?? run.baseRef, files, id,
+      join(store.runDir(run.runId), `checkpoint-${id}.index`), store,
+    )
+    await pinRef(tool, bare, `refs/lachesis/checkpoints/${id}`, gitCommit)
+  }
+  const manifest: FrozenManifest = {
+    deliveryId: id,
+    runId: run.runId,
+    kind: run.kind,
+    baseRef: run.baseRef,
+    originBaseRef: run.kind === 'git' ? (run.originBaseRef ?? run.baseRef) : null,
+    files,
+    filtered,
+    manifestSha256: manifestSha256(files),
+    gitCommit,
+    createdAt: new Date().toISOString(),
+  }
+  return publishSnapshot(store, dest, store.stagingDir(`checkpoint-${id}`), manifest, run)
 }
 
 async function collectGitDiff(

@@ -7,6 +7,15 @@ export { parseArgv, spawnArgv } from './spawn.ts'
 export { assertAbsolutePath, assertRelativePosix, assertSafeId, isInside } from './paths.ts'
 export { assertWorkerStopped } from './worker.ts'
 export { checkDeliveryScope } from './scope.ts'
+export { prepareNativeSandboxDirectory } from './native-root.ts'
+export type {
+  StorageObservation,
+  StoragePolicy,
+  StorageReservation,
+  StorageReservationBackend,
+  StorageStatus,
+} from './ledger.ts'
+export { MemoryReservationBackend, futureReservationBytes, assertSameDevice } from './ledger.ts'
 
 export type {
   ApplyInput,
@@ -20,6 +29,8 @@ export type {
   IntegrationOutcome,
   PrepareRunInput,
   PreparedWorkspace,
+  RunReservationEstimate,
+  RunReservationQuery,
   WorkerStopProof,
   WorkspaceOptions,
 } from './types.ts'
