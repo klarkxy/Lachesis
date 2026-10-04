@@ -27,7 +27,8 @@ operator actions. Query results are `{ data: { items, nextCursor } }`.
 | `POST /profiles/capabilities` | local browser operator only; `{ providerRef, modelId }` probes a prompt-free ACP session and returns available `reasoningOptions` |
 | `PATCH /profiles/:id` | partial profile edit plus `expectedRevision` |
 | `GET /profiles/:id/history` | per-revision score, count, and contributing issue IDs |
-| `GET /issues?projectId=&status=&cursor=` / `POST /issues` | paged `Issue` list / `CreateIssueInput` |
+| `GET /issues?projectId=&status=&cursor=` / `POST /issues` | paged `Issue` list with `applicationStatus` for the latest candidate of its currently accepted delivery, or `null` / `CreateIssueInput` |
+| `GET /deliveries/:id/review?path=` | `delivery.read` plus project scope; manifest-member comparison from frozen input and result: `{ path, kind, before, after, binary, truncated, unavailableReason }`; content above 128 KB per side is omitted and marked; historical files without an immutable per-file baseline cannot be compared |
 | `GET /issues/:id` | `{ issue, runs, deliveries, evaluation, applications, questions, comments, checkpoints }` |
 | `PATCH /issues/:id/plan` | `{ expectedIssueVersion, dependsOn?, ownedPaths?, readOnlyPaths? }`; only queued/blocked Issues with no previous Run |
 | `GET /issues/:id/checkpoints` | immutable unfinished artifacts; never accepted Deliveries |
