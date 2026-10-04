@@ -1,4 +1,5 @@
 export { Workspace } from './workspace.ts'
+export type { DeliveryFileReview } from './review.ts'
 export { WorkspaceError, isWorkspaceError } from './errors.ts'
 export { LachesisWorkspace, type Config as LachesisWorkspaceConfig } from './plugin.ts'
 export { default } from './plugin.ts'

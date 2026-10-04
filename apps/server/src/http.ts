@@ -109,6 +109,13 @@ export async function handleHttpApi(
   try {
     const url = new URL(req.url ?? '/', 'http://localhost')
     const pathname = url.pathname
+    const reviewMatch = /^\/api\/v1\/deliveries\/([^/]+)\/review$/.exec(pathname)
+    if (req.method === 'GET' && reviewMatch) {
+      const actor = auth.authenticate(req, 'delivery.read')
+      const review = await app.reviewDeliveryFile(actor, decodeURIComponent(reviewMatch[1]!), url.searchParams.get('path') ?? '')
+      respond(res, 200, { data: review })
+      return
+    }
     const fileMatch = /^\/api\/v1\/(deliveries|checkpoints)\/([^/]+)\/files\/(.+)$/.exec(pathname)
     if (req.method === 'GET' && fileMatch) {
       const actor = auth.authenticate(req, 'delivery.read')

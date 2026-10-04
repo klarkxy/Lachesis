@@ -1908,6 +1908,11 @@ export class DomainService {
     return JSON.parse(asText(existing.result_json)) as T
   }
 
+  latestDeliveryApplication(issueId: Id, deliveryId: Id): Application | null {
+    const row = this.db.prepare('SELECT * FROM applications WHERE issue_id = ? AND delivery_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1').get(issueId, deliveryId)
+    return row ? this.mapApplication(row) : null
+  }
+
   private withIdempotency<T>(actor: Actor, projectId: Id, operation: string, ref: IdempotencyRef, fn: () => T): T {
     if (!ref.key.trim()) throw new DomainError(ErrorCode.invalidInput, 'Idempotency-Key is required')
     return this.tx(() => {

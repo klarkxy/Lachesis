@@ -31,6 +31,7 @@ import type {
   WorkspaceOptions,
 } from './types.ts'
 import { snapshotTree } from './snapshot.ts'
+import { reviewDeliveryFile } from './review.ts'
 import { assertWorkerStopped } from './worker.ts'
 
 export class Workspace {
@@ -120,6 +121,10 @@ export class Workspace {
     }
     const bytes = await this.store.getBlob(file.sha256)
     return { file, bytes }
+  }
+
+  reviewDeliveryFile(deliveryId: string, path: string) {
+    return reviewDeliveryFile(this.store, this.gitBin, deliveryId, path)
   }
 
   /** Bytes of one managed baseline file. Phase 1 reads the shared blob; legacy reads the directory. */

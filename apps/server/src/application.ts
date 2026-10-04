@@ -6,6 +6,7 @@ import type {
   CreateProfileInput,
   CreateProjectInput,
   Id,
+  Issue,
   IssueEvent,
   Page,
   SchedulerSettings,
@@ -287,6 +288,14 @@ export class LachesisApplication implements OperationInvoker {
     }
   }
 
+  reviewDeliveryFile(actor: AuthActor, deliveryId: Id, path: string): Promise<import('@lachesis/plugin-workspace').DeliveryFileReview> {
+    return this.perform(async () => {
+      const delivery = this.domain.getDelivery(deliveryId)
+      this.guardIssue(actor, delivery.issueId)
+      return this.supervisor.workspace.reviewDeliveryFile(deliveryId, path)
+    })
+  }
+
   private idem(context: OperationContext, body: unknown): IdempotencyRef {
     if (!context.idempotencyKey) {
       throw new ApplicationError('idempotency_key_required', 400, 'Idempotency-Key is required')
@@ -386,6 +395,12 @@ export class LachesisApplication implements OperationInvoker {
       }
       case 'profile.history': return this.domain.listProfileHistory(text(input, 'profileId'))
       case 'issue.list': {
+        const withApplicationStatus = (items: Issue[]) => items.map((issue) => ({
+          ...issue,
+          applicationStatus: issue.acceptedDeliveryId
+            ? this.domain.latestDeliveryApplication(issue.id, issue.acceptedDeliveryId)?.status ?? null
+            : null,
+        }))
         const projectId = typeof input.projectId === 'string' ? input.projectId : undefined
         const status = typeof input.status === 'string' ? input.status : undefined
         const cursor = typeof input.cursor === 'string' ? input.cursor : undefined
@@ -395,10 +410,11 @@ export class LachesisApplication implements OperationInvoker {
         if (!projectId && context.actor.projectIds !== null) {
           const groups = context.actor.projectIds.map((id) => this.domain.listIssues({ projectId: id,
             ...(status ? { status: status as any } : {}) }).items)
-          return { items: groups.flat(), nextCursor: null }
+          return { items: withApplicationStatus(groups.flat()), nextCursor: null }
         }
-        return this.domain.listIssues({ ...(projectId ? { projectId } : {}), ...(status ? { status: status as any } : {}),
+        const page = this.domain.listIssues({ ...(projectId ? { projectId } : {}), ...(status ? { status: status as any } : {}),
           ...(cursor ? { cursor } : {}), ...(limit !== undefined ? { limit } : {}) })
+        return { ...page, items: withApplicationStatus(page.items) }
       }
       case 'issue.create': {
         const projectId = text(input, 'projectId')

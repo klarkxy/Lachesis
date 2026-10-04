@@ -248,6 +248,13 @@ export async function catBlob(tool: GitTool, repo: string, sha: string): Promise
   return result.stdout
 }
 
+export async function blobSize(tool: GitTool, repo: string, sha: string): Promise<number> {
+  const result = await gitText(tool, repo, ['cat-file', '-s', sha])
+  const size = Number(result.text)
+  if (!Number.isSafeInteger(size) || size < 0) throw new WorkspaceError('store_corrupt', 'Invalid Git blob size')
+  return size
+}
+
 export function gitBlobId(bytes: Uint8Array, objectBytes: number): string {
   const algo = objectBytes === 64 ? 'sha256' : 'sha1'
   return createHash(algo).update(`blob ${bytes.length}\0`).update(bytes).digest('hex')
