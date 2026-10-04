@@ -221,9 +221,13 @@ const app = agent({ name: 'lachesis-acp-fixture' })
 
     if (text.includes('ESCAPE')) {
       // Reach for a path outside the granted writable root and let the OS be
-      // the judge. The runner's own denial dialect lands on stderr; if the
-      // confinement is not real the write succeeds and the test cleans it up.
-      const target = join(homedir(), escapeName)
+      // the judge. HOME is the private Run home, so the probe path is explicit.
+      // The runner's own denial dialect lands on stderr; if the confinement is
+      // not real the write succeeds and the test cleans it up.
+      const escapePath = process.env.LACHESIS_FIXTURE_ESCAPE_PATH
+      const target = typeof escapePath === 'string' && isAbsolute(escapePath)
+        ? escapePath
+        : join(homedir(), escapeName)
       try {
         writeFileSync(target, 'escaped', 'utf8')
         process.stderr.write(`fixture escape SUCCEEDED at ${target}\n`)
@@ -265,6 +269,12 @@ const app = agent({ name: 'lachesis-acp-fixture' })
     const payload = {
       cwd: record.cwd,
       dshHome: record.dshHome,
+      home: process.env.HOME ?? '',
+      userProfile: process.env.USERPROFILE ?? '',
+      tmp: process.env.TMP ?? '',
+      temp: process.env.TEMP ?? '',
+      tmpdir: process.env.TMPDIR ?? '',
+      appData: process.env.APPDATA ?? '',
       sessionId: record.sessionId,
       provider: record.selection.provider,
       model: record.selection.model,

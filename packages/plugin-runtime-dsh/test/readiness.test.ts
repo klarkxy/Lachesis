@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { readFile, readdir, unlink, writeFile } from 'node:fs/promises'
+import { chmod, readFile, readdir, stat, unlink, utimes, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import type { ShellRunResult } from '@deepseek-ai/dsh-shell'
 import SandboxPwshExecutor from '@deepseek-ai/dsh-pwsh-sandbox'
 import SandboxBashExecutor from '@deepseek-ai/dsh-bash-sandbox'
 import type { Context } from '@deepseek-ai/cordis'
-import { DshAcpRuntime, RangeExitUnconfirmedError, RuntimeEnvironmentError, classifyRuntimeEnvironmentError } from '../src/index.ts'
+import { DshAcpRuntime, ExecutionPolicyError, RangeExitUnconfirmedError, RuntimeEnvironmentError, classifyRuntimeEnvironmentError } from '../src/index.ts'
+import { nativeExecutionPolicySupport } from '../src/sandbox.ts'
 import { checkToolReadiness, createToolProbeBackend, readinessIdentity, type ToolProbeBackend } from '../src/readiness.ts'
 import { makeWorkspace } from './helpers.ts'
 import { AcpRun } from '../src/run.ts'
@@ -105,7 +106,7 @@ test('partially initialized composition retains both failures and unconfirmed ra
   assert.deepEqual(await readdir(spec.cwd), [])
 })
 
-test('readiness refuses default homes before tool composition and fingerprints config metadata only', async (t) => {
+test('readiness refuses default homes and binds private config without revealing values', async (t) => {
   const spec = await makeWorkspace('lachesis-ready-paths-')
   t.after(spec.cleanup)
   let invoked = false
@@ -128,7 +129,13 @@ test('production start cannot bypass failed readiness or launch ACP first', asyn
     checks++
     return { ready: false, code: 'sandbox_write_grant_failed', diagnostic: 'WRITE_OWNER unavailable' }
   })
-  await assert.rejects(runtime.start({ cwd: '/unused', dshHome: '/unused-home', provider: 'unused', model: 'unused' }), RuntimeEnvironmentError)
+  await assert.rejects(runtime.start({
+    cwd: '/unused',
+    dshHome: '/unused-home',
+    provider: 'unused',
+    model: 'unused',
+    sandbox: { workspaceRoot: '/unused-root', accessMode: 'workspace-write', requireFull: false },
+  }), RuntimeEnvironmentError)
   assert.equal(checks, 1)
 })
 
@@ -136,6 +143,7 @@ test('classifier follows error causes but does not turn provider or command erro
   assert.equal(classifyRuntimeEnvironmentError(new Error('HTTP 429 provider busy')), null)
   assert.equal(classifyRuntimeEnvironmentError(new Error('test assertion failed')), null)
   assert.equal(classifyRuntimeEnvironmentError(new Error('startup', { cause: new Error('SetNamedSecurityInfoW failed with Win32 5') }))?.code, 'sandbox_write_grant_failed')
+  assert.equal(classifyRuntimeEnvironmentError(new ExecutionPolicyError('Pinned windows-acl enforcement is partial, so read-only execution is unsupported.')), null)
 })
 
 test('successful readiness is consumed once and invalidated by config changes, without duplicate probes', async (t) => {
@@ -161,17 +169,33 @@ test('successful readiness is consumed once and invalidated by config changes, w
   })
   // Prevent any ACP transport/model/provider initialization in this receipt test.
   t.mock.method(AcpRun.prototype, 'activate', async () => {})
-  const runSpec = { ...spec, provider: 'unused', model: 'unused' }
-  assert.equal((await runtime.checkReadiness(spec)).ready, true)
+  const sandbox = { workspaceRoot: dirname(spec.cwd), accessMode: 'workspace-write' as const, requireFull: false }
+  const rooted = { ...spec, sandbox }
+  const runSpec = { ...rooted, provider: 'unused', model: 'unused' }
+  assert.equal((await runtime.checkReadiness(rooted)).ready, true)
   assert.equal(commands, 2)
   await (await runtime.start(runSpec)).close()
   assert.equal(commands, 2, 'start consumes the existing fresh proof')
   await (await runtime.start(runSpec)).close()
   assert.equal(commands, 4, 'proof is consumed, not reused indefinitely')
-  assert.equal((await runtime.checkReadiness(spec)).ready, true)
+  assert.equal((await runtime.checkReadiness(rooted)).ready, true)
   await writeFile(join(spec.dshHome, 'cordis.patch.yml'), 'changed: true')
   await (await runtime.start(runSpec)).close()
   assert.equal(commands, 8, 'config metadata changes force another actual tool probe')
+})
+
+test('configuration identity survives ACL metadata but detects same-size content changes', async (t) => {
+  const spec = await makeWorkspace('lachesis-ready-acl-config-')
+  t.after(spec.cleanup)
+  const path = join(spec.dshHome, 'cordis.patch.yml')
+  await writeFile(path, 'key: synthetic-a')
+  const before = await readinessIdentity(spec)
+  const info = await stat(path)
+  await chmod(path, info.mode)
+  assert.equal(await readinessIdentity(spec), before, 'ACL metadata must not invalidate identical configuration')
+  await writeFile(path, 'key: synthetic-b')
+  await utimes(path, info.atime, info.mtime)
+  assert.notEqual(await readinessIdentity(spec), before, 'same-size content drift must invalidate readiness')
 })
 
 test('a configuration change during the probe is rejected', async (t) => {
@@ -186,6 +210,83 @@ test('a configuration change during the probe is rejected', async (t) => {
   const result = await checkToolReadiness(spec, 3_000, async () => fake.backend)
   assert.equal(result.ready, false)
   assert.match(result.diagnostic!, /changed during tool preflight/)
+})
+
+test('unsupported read-only or full readiness does not compose tools', async () => {
+  const policies = [
+    { accessMode: 'read-only' as const, requireFull: false },
+    { accessMode: 'workspace-write' as const, requireFull: true },
+  ]
+  for (const sandbox of policies) {
+    if (nativeExecutionPolicySupport(sandbox).supported) continue
+    let invoked = false
+    await assert.rejects(() => checkToolReadiness({
+      cwd: join(homedir(), 'unused-cwd'),
+      dshHome: join(homedir(), 'unused-home'),
+      sandbox,
+    }, 1_000, async () => {
+      invoked = true
+      throw new Error('factory')
+    }), ExecutionPolicyError)
+    assert.equal(invoked, false)
+  }
+})
+
+test('readiness identity, cache, and shell follow the explicit root and private env', async (t) => {
+  const spec = await makeWorkspace('lachesis-ready-private-')
+  t.after(spec.cleanup)
+  const root = dirname(spec.cwd)
+  const base = { workspaceRoot: root, accessMode: 'workspace-write' as const, requireFull: false }
+  const withMode = { ...base, mode: 'workspace-write' as const }
+  assert.notEqual(
+    await readinessIdentity({ ...spec, sandbox: base }),
+    await readinessIdentity({ ...spec, sandbox: withMode }),
+  )
+  const runtime = new DshAcpRuntime({ bindProcessExit: false })
+  t.after(() => runtime.closeAll())
+  let commands = 0
+  let seen: {
+    env?: Record<string, string>
+    dshEnv?: { DSH_HOME?: string }
+    sandboxPolicy?: { workspaceRoot?: string }
+  } | undefined
+  const prototype = process.platform === 'win32' ? SandboxPwshExecutor.prototype : SandboxBashExecutor.prototype
+  t.mock.method(prototype, 'execute', async (request: {
+    command: string
+    env?: Record<string, string>
+    dshEnv?: { DSH_HOME?: string }
+    sandboxPolicy?: { workspaceRoot?: string }
+  }) => {
+    commands++
+    seen ??= request
+    const name = request.command.match(/\.lachesis-readiness-([a-f0-9-]+)\.txt/)
+    assert.ok(name)
+    const path = join(spec.cwd, name[0])
+    const marker = name[1]
+    if (/Remove-Item|rm --/.test(request.command)) await unlink(path)
+    else await writeFile(path, `${marker}-command`)
+    return { result: async () => ({
+      exitCode: 0, signal: null, timedOut: false, aborted: false,
+      stdout: { text: marker, truncated: false }, stderr: { text: '', truncated: false },
+      sandbox: { mode: 'workspace-write', enforcement: 'partial', denied: false },
+    }) }
+  })
+  t.mock.method(AcpRun.prototype, 'activate', async () => {})
+  const runSpec = { ...spec, provider: 'unused', model: 'unused', sandbox: base }
+  assert.equal((await runtime.checkReadiness(runSpec)).ready, true)
+  assert.equal(commands, 2)
+  assert.equal(seen?.env?.HOME, spec.dshHome)
+  assert.equal(seen?.env?.USERPROFILE, spec.dshHome)
+  assert.equal(seen?.env?.TMP, join(dirname(spec.dshHome), 'tmp'))
+  assert.equal(seen?.env?.TEMP, seen?.env?.TMP)
+  assert.equal(seen?.env?.TMPDIR, seen?.env?.TMP)
+  assert.equal(seen?.dshEnv?.DSH_HOME, spec.dshHome)
+  assert.equal(seen?.sandboxPolicy?.workspaceRoot, root)
+  assert.notEqual(seen?.env?.HOME?.toLowerCase(), homedir().toLowerCase())
+  await (await runtime.start(runSpec)).close()
+  assert.equal(commands, 2, 'the same sandbox policy reuses the fresh proof')
+  await (await runtime.start({ ...runSpec, sandbox: withMode })).close()
+  assert.equal(commands, 4, 'a sandbox policy change probes again')
 })
 
 test('probe cancellation waits for backend cleanup and never reports ready', async (t) => {

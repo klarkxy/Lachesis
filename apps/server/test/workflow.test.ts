@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { test } from 'node:test'
 import type { Application, Issue, Profile, Project } from '@lachesis/contracts'
+import { DEFAULT_STORAGE_POLICY } from '@lachesis/contracts'
 import type { DshAcpExecutor, RunEvent, RunHandle, RunSpec } from '@lachesis/plugin-runtime-dsh'
 import { LachesisApplication } from '../src/application.ts'
 
@@ -13,11 +14,13 @@ const browser = { kind: 'browser' as const, id: 'test-operator', projectIds: nul
 class FakeAcp implements DshAcpExecutor {
   private starts = 0
   readonly prompts: string[] = []
+  readonly specifications: RunSpec[] = []
   constructor(
     private readonly fileForAttempt: (attempt: number) => string = () => 'result.txt',
     private readonly replyChunks: string[] = [],
   ) {}
   async start(spec: RunSpec): Promise<RunHandle> {
+    this.specifications.push(spec)
     const file = this.fileForAttempt(++this.starts)
     const runId = randomUUID()
     const sessionId = `session-${runId}`
@@ -96,7 +99,8 @@ test('Issue executes in an isolated directory, freezes, integrates, and applies 
   const projectRoot = join(root, 'project')
   await mkdir(projectRoot)
   await writeFile(join(projectRoot, 'original.txt'), 'untouched\n')
-  const app = await LachesisApplication.open(join(root, 'data'), new FakeAcp())
+  const runtime = new FakeAcp()
+  const app = await LachesisApplication.open(join(root, 'data'), runtime)
   const invoke = (operation: string, input: Record<string, unknown>, key: string | null = null) =>
     app.invoke(operation, input, { actor: browser, idempotencyKey: key })
   try {
@@ -106,7 +110,7 @@ test('Issue executes in an isolated directory, freezes, integrates, and applies 
     app.start()
     const issue = await invoke('issue.create', { projectId: project.id, title: 'Write result', description: 'Add result.txt',
       acceptanceCriteria: ['result.txt exists'], dispatch: { mode: 'require', profileId: profile.id },
-      requesterRef: 'test' }, 'issue-1') as Issue
+      requesterRef: 'test', attendance: 'bounded-unattended' }, 'issue-1') as Issue
     let detail: Awaited<ReturnType<typeof app.domain.getIssueDetail>>
     const deadline = Date.now() + 8_000
     for (;;) {
@@ -117,6 +121,13 @@ test('Issue executes in an isolated directory, freezes, integrates, and applies 
       await new Promise((resolve) => setTimeout(resolve, 40))
     }
     assert.equal(detail.deliveries.length, 1)
+    const spec = runtime.specifications[0]!
+    const executionRoot = join(app.supervisor.workspace.executionRoot, detail.runs[0]!.id)
+    assert.equal(spec.dshHome, join(executionRoot, 'box', 'state', 'home'))
+    assert.equal(spec.sandbox?.workspaceRoot, join(executionRoot, 'box'))
+    assert.equal(spec.sandbox?.tempRoot, join(executionRoot, 'tmp'))
+    assert.equal(spec.sandbox?.accessMode, 'workspace-write')
+    assert.equal(spec.permissionMode, 'allow-once')
     assert.equal(detail.deliveries[0]?.files[0]?.path, 'result.txt')
     await assert.rejects(readFile(join(projectRoot, 'result.txt')))
     const accepted = await invoke('issue.accept', { issueId: issue.id, deliveryId: detail.deliveries[0]!.id,
@@ -124,10 +135,22 @@ test('Issue executes in an isolated directory, freezes, integrates, and applies 
     const candidate = await invoke('application.prepare', { issueId: issue.id, deliveryId: detail.deliveries[0]!.id,
       expectedIssueVersion: accepted.version }, 'integration-1') as Application
     assert.equal(candidate.status, 'ready')
+    app.domain.saveStoragePolicy({ kind: 'operator', id: browser.id }, { ...DEFAULT_STORAGE_POLICY, maxManagedBytes: 0 })
+    const replay = await invoke('application.prepare', { issueId: issue.id, deliveryId: detail.deliveries[0]!.id,
+      expectedIssueVersion: accepted.version }, 'integration-1') as Application
+    assert.equal(replay.id, candidate.id)
+    assert.equal(replay.status, 'ready', 'a confirmed receipt does not need fresh disk admission')
+    await assert.rejects(invoke('application.prepare', { issueId: issue.id, deliveryId: detail.deliveries[0]!.id,
+      expectedIssueVersion: accepted.version + 1 }, 'integration-1'), /different body/)
+    app.domain.saveStoragePolicy({ kind: 'operator', id: browser.id }, { ...DEFAULT_STORAGE_POLICY })
     await assert.rejects(readFile(join(projectRoot, 'result.txt')))
     const applied = await invoke('application.apply', { applicationId: candidate.id,
       expectedTarget: candidate.expectedTarget }, 'apply-1') as Application
     assert.equal(applied.status, 'applied')
+    app.domain.saveStoragePolicy({ kind: 'operator', id: browser.id }, { ...DEFAULT_STORAGE_POLICY, maxManagedBytes: 0 })
+    const replayApplied = await invoke('application.apply', { applicationId: candidate.id,
+      expectedTarget: candidate.expectedTarget }, 'apply-1') as Application
+    assert.equal(replayApplied.status, 'applied')
     assert.equal(await readFile(join(projectRoot, 'result.txt'), 'utf8'), 'finished by isolated worker\n')
   } finally {
     await app.close()

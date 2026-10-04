@@ -14,6 +14,8 @@ interface Route {
 }
 
 const routes: Route[] = [
+  { method: 'GET', pattern: /^\/api\/v1\/storage$/, operation: 'storage.get', permission: 'scheduler.read' },
+  { method: 'PATCH', pattern: /^\/api\/v1\/storage$/, operation: 'storage.update', permission: 'scheduler.write' },
   { method: 'GET', pattern: /^\/api\/v1\/scheduler$/, operation: 'scheduler.get', permission: 'scheduler.read' },
   { method: 'PUT', pattern: /^\/api\/v1\/scheduler$/, operation: 'scheduler.update', permission: 'scheduler.write' },
   { method: 'GET', pattern: /^\/api\/v1\/projects\/(?<projectId>[^/]+)\/dispatch$/, operation: 'project.dispatch', permission: 'project.read' },

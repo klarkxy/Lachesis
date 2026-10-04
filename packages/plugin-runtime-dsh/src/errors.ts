@@ -21,6 +21,20 @@ export class RuntimeEnvironmentError extends Error {
   }
 }
 
+/**
+ * The pinned backend cannot enforce this Run's access mode or full isolation.
+ * This is a per-issue refusal. It is not a host fault, so it must not block
+ * every other issue on the project.
+ */
+export class ExecutionPolicyError extends Error {
+  readonly code = 'execution_policy_unsupported'
+
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options)
+    this.name = 'ExecutionPolicyError'
+  }
+}
+
 /** Only deterministic tool infrastructure faults; ordinary command/provider failures are not included. */
 export function classifyRuntimeEnvironmentError(error: unknown): RuntimeEnvironmentError | null {
   if (error instanceof RuntimeEnvironmentError) return error

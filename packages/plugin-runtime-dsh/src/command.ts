@@ -8,16 +8,25 @@ export function runtimePackageRoot(): string {
   return fileURLToPath(new URL('..', import.meta.url))
 }
 
+/** Package-local pinned dsh CLI. There is no PATH fallback. */
+export function pinnedDshBin(): string {
+  return join(runtimePackageRoot(), 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
+}
+
 /**
- * Default ACP child argv. Prefers the package-local dsh CLI so nothing is
- * installed globally. Callers may override with `RunSpec.command`.
+ * Default ACP child argv. The pinned package-local runtime is required.
+ * `RunSpec.command` remains the explicit custom-command test seam.
  */
 export function defaultAcpCommand(): string[] {
-  const dshBin = join(runtimePackageRoot(), 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
-  if (existsSync(dshBin)) {
-    return [process.execPath, dshBin, '--profile', DSH_ACP_PROFILE]
+  return acpCommandFromPinnedBin(pinnedDshBin(), existsSync(pinnedDshBin()))
+}
+
+/** @internal Test seam for the absent-runtime refusal. */
+export function acpCommandFromPinnedBin(binPath: string, present: boolean): string[] {
+  if (!present) {
+    throw new Error('Pinned package-local dsh runtime is absent; refusing a PATH dsh fallback')
   }
-  return ['dsh', '--profile', DSH_ACP_PROFILE]
+  return [process.execPath, binPath, '--profile', DSH_ACP_PROFILE]
 }
 
 export async function resolveArgv(

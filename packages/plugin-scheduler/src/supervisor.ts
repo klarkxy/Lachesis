@@ -1,10 +1,10 @@
-import { randomUUID } from 'node:crypto'
-import { copyFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { createHash, randomUUID } from 'node:crypto'
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { Evidence, Issue, Run, RunCheckpoint } from '@lachesis/contracts'
+import { DEFAULT_STORAGE_POLICY, type Evidence, type Issue, type Run, type RunCheckpoint, type StorageAdmission } from '@lachesis/contracts'
 import { DomainError, ErrorCode, type Claim, type DomainService } from '@lachesis/plugin-domain'
 import { ACP_REASONING_CONFIG_ID, RangeExitUnconfirmedError, RuntimeEnvironmentError, classifyRuntimeEnvironmentError, type DshAcpExecutor, type RunEvent, type RunHandle } from '@lachesis/plugin-runtime-dsh'
-import { Workspace } from '@lachesis/plugin-workspace'
+import { Workspace, prepareNativeSandboxDirectory } from '@lachesis/plugin-workspace'
 import { ApplicationError } from './errors.ts'
 import { visibleAssistantReply } from './response.ts'
 
@@ -98,6 +98,16 @@ export class RunSupervisor {
     this.dataRoot = dataRoot
     this.runtime = runtime
     this.tickIntervalMs = tickIntervalMs
+    this.workspace.configureStorageBackend(this.domain.storageReservationBackend())
+    this.workspace.ledger.setManagedRoot(this.dataRoot)
+    this.workspace.setStoragePolicy(this.domain.getStoragePolicy() ?? DEFAULT_STORAGE_POLICY)
+    this.domain.setExecutionPolicySupport((policy) => {
+      const support = (this.runtime as DshAcpExecutor & {
+        executionPolicySupport?: (request: typeof policy) => { supported: boolean; diagnostic: string | null }
+      }).executionPolicySupport?.(policy)
+      if (!support && (policy.accessMode === 'read-only' || policy.requireFull)) return 'Execution policy capabilities are unknown'
+      return support?.supported === false ? support.diagnostic ?? 'Native DSH cannot enforce this execution policy' : null
+    })
   }
 
   start(): void {
@@ -129,7 +139,7 @@ export class RunSupervisor {
     if (closeError) throw closeError
   }
 
-  probeProfileCapabilities(providerRef: string, modelId: string): Promise<{
+  probeProfileCapabilities(providerRef: string, modelId: string, boundaryMode: 'whole-range' | 'native-tools' = 'whole-range'): Promise<{
     providerRef: string
     modelId: string
     reasoningOptions: Array<{ value: string; name: string }>
@@ -139,13 +149,13 @@ export class RunSupervisor {
       throw new ApplicationError('range_unconfirmed', 503, 'Worker exit is unconfirmed; restart Lachesis before probing again')
     }
     if (this.probes.size > 0) throw new ApplicationError('probe_busy', 409, 'A model capability probe is already running')
-    const probe = this.runProfileProbe(providerRef, modelId)
+    const probe = this.runProfileProbe(providerRef, modelId, boundaryMode)
     this.probes.add(probe)
     void probe.finally(() => this.probes.delete(probe)).catch(() => {})
     return probe
   }
 
-  private async runProfileProbe(providerRef: string, modelId: string): Promise<{
+  private async runProfileProbe(providerRef: string, modelId: string, boundaryMode: 'whole-range' | 'native-tools'): Promise<{
     providerRef: string
     modelId: string
     reasoningOptions: Array<{ value: string; name: string }>
@@ -159,9 +169,12 @@ export class RunSupervisor {
       const parent = join(this.dataRoot, 'profile-probes')
       await mkdir(parent, { recursive: true })
       root = await mkdtemp(join(parent, 'probe-'))
-      const cwd = join(root, 'workspace')
-      const dshHome = join(root, 'dsh-home')
-      await Promise.all([mkdir(cwd), mkdir(dshHome)])
+      const box = join(root, 'box')
+      const cwd = join(box, 'work')
+      const dshHome = join(box, 'state', 'home')
+      const tempRoot = join(root, 'tmp')
+      await Promise.all([mkdir(cwd, { recursive: true }), mkdir(dshHome, { recursive: true }), mkdir(tempRoot, { recursive: true })])
+      await prepareNativeSandboxDirectory(box, dshHome, tempRoot)
       try {
         await copyFile(join(this.dataRoot, 'dsh', 'cordis.patch.yml'), join(dshHome, 'cordis.patch.yml'))
       } catch (error) {
@@ -169,8 +182,10 @@ export class RunSupervisor {
       }
       if (this.stopping) throw new ApplicationError('service_stopping', 503, 'Lachesis is stopping')
       const ocgKey = process.env.OCG_GATEWAY_KEY
+      await this.workspace.ledger.assertHeld()
       handle = await this.runtime.start({
         cwd, dshHome, provider: providerRef, model: modelId,
+        sandbox: { mode: 'workspace-write', workspaceRoot: box, tempRoot, boundaryMode, accessMode: 'workspace-write', requireFull: false },
         ...(ocgKey ? { env: { OCG_GATEWAY_KEY: ocgKey } } : {}),
         permissionMode: 'reject-once',
       })
@@ -283,6 +298,7 @@ export class RunSupervisor {
     if (this.stopping || this.ticking) return
     this.ticking = true
     try {
+      await this.refreshStorageAdmissions()
       while (!this.stopping && this.tasks.size < this.domain.getSchedulerSettings().globalMaxActive) {
         const claim = this.domain.claimNextReadyIssue(worker)
         if (!claim) break
@@ -300,8 +316,36 @@ export class RunSupervisor {
     }
   }
 
-  private async prepareDshHome(runId: string): Promise<string> {
-    const home = join(this.dataRoot, 'run-homes', runId)
+  private async refreshStorageAdmissions(): Promise<void> {
+    this.workspace.setStoragePolicy(this.domain.getStoragePolicy() ?? DEFAULT_STORAGE_POLICY)
+    const policyDigest = this.domain.storagePolicyDigest()
+    this.domain.setStorageAdmissions(null)
+    const candidates = this.domain.getSchedulerSnapshot().decisions.filter((item) => item.reason === 'ready')
+    const estimates = new Map<string, { requiredBytes: number; sourceRef: string | null }>()
+    const sources = new Map<string, { requiredBytes: number; sourceRef: string | null }>()
+    for (const candidate of candidates) {
+      if (this.stopping) break
+      const issue = this.domain.getIssue(candidate.issueId)
+      const project = this.domain.getProject(issue.projectId)
+      const seedDeliveryId = this.domain.getReworkSourceDelivery(issue.id)
+      try {
+        const key = `${project.id}:${seedDeliveryId ?? ''}`
+        const estimate = sources.get(key) ?? await this.workspace.estimateRunReservation({ kind: project.kind, projectRoot: project.rootPath,
+          targetBranch: project.targetBranch, ...(seedDeliveryId ? { seedDeliveryId } : {}) })
+        sources.set(key, estimate)
+        estimates.set(issue.id, estimate)
+      } catch { /* An unavailable source or measurement is not a failed model execution. */ }
+    }
+    const admissions = new Map<string, StorageAdmission>()
+    try {
+      const observation = await this.workspace.ledger.observe()
+      for (const [id, estimate] of estimates) admissions.set(id, { ...estimate, observation, policyDigest })
+    } catch { /* Fail closed; the next tick can obtain a fresh observation. */ }
+    this.domain.setStorageAdmissions(admissions)
+  }
+
+  private async prepareDshHome(runId: string, privateHome = join(this.workspace.executionRoot, runId, 'box', 'state', 'home')): Promise<string> {
+    const home = privateHome
     await mkdir(home, { recursive: true })
     // The operator can place provider configuration in the service-owned dsh home.
     // Each Run receives a snapshot, while session and conversation data stay isolated.
@@ -325,6 +369,7 @@ export class RunSupervisor {
         kind: project.kind,
         projectRoot: project.rootPath,
         targetBranch: project.targetBranch,
+        ...(run.executionSnapshot?.sourceSelection.baseRef ? { pinnedBaseRef: run.executionSnapshot.sourceSelection.baseRef } : {}),
         ...(reworkDeliveryId ? { seedDeliveryId: reworkDeliveryId } : {}),
       }))
       if (this.stopping) throw new Error('Service stopped before worker startup')
@@ -332,7 +377,15 @@ export class RunSupervisor {
         workspacePath: prepared.workspacePath,
         baseRef: prepared.baseRef,
       })
-      const home = await this.prepareDshHome(run.id)
+      const home = await this.prepareDshHome(run.id, prepared.homePath)
+      await prepareNativeSandboxDirectory(join(prepared.executionPath!, 'box'), home, prepared.tmpPath!)
+      const sandbox = { mode: 'workspace-write' as const,
+        boundaryMode: run.executionSnapshot?.boundaryMode ?? 'whole-range',
+        workspaceRoot: run.executionSnapshot?.accessMode === 'read-only'
+          ? join(prepared.executionPath!, 'box', 'state') : join(prepared.executionPath!, 'box'),
+        tempRoot: prepared.tmpPath!,
+        accessMode: run.executionSnapshot?.accessMode ?? 'workspace-write',
+        requireFull: run.executionSnapshot?.isolationRequirement === 'full' }
       let verificationFeedback = ''
       const failedApplication = reworkDeliveryId ? this.domain.listApplications(issue.id)
         .filter((item) => item.deliveryId === reworkDeliveryId && ['failed', 'conflict'].includes(item.status)).at(-1) : null
@@ -347,8 +400,16 @@ export class RunSupervisor {
         }
       }
       if (this.stopping) throw new Error('Service stopped before worker startup')
+      let harnessConfigDigest: string | null = null
+      try { harnessConfigDigest = createHash('sha256').update(await readFile(join(home, 'cordis.patch.yml'))).digest('hex') }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
+      this.domain.bindRunInput(worker, run.id, generation, {
+        executionSnapshotDigest: this.domain.executionSnapshotDigest(run.id), baseRef: prepared.baseRef,
+        materializedDigest: await this.workspace.inputDigest(run.id), harnessConfigDigest,
+        captureGuarantee: project.kind === 'git' ? 'fixed-commit' : 'captured-bytes', boundAt: new Date().toISOString(),
+      })
       if (this.runtime.checkReadiness) {
-        const readiness = await this.runtime.checkReadiness({ cwd: prepared.workspacePath, dshHome: home })
+        const readiness = await this.runtime.checkReadiness({ cwd: prepared.workspacePath, dshHome: home, sandbox })
         if (!readiness.ready) {
           const diagnostic = redact(readiness.diagnostic ?? 'The worker environment is not ready')
           throw new RuntimeEnvironmentError(readiness.code ?? 'environment_unavailable', diagnostic)
@@ -358,6 +419,7 @@ export class RunSupervisor {
       // dsh-subprocess scrubs credential-shaped ambient variables. Forward only
       // this explicitly configured local gateway credential to the ACP process.
       const ocgKey = process.env.OCG_GATEWAY_KEY
+      await this.workspace.ledger.assertHeld()
       handle = await this.runtime.start({
         cwd: prepared.workspacePath,
         dshHome: home,
@@ -365,7 +427,8 @@ export class RunSupervisor {
         model: run.modelId,
         ...(run.reasoningEffort ? { reasoningEffort: run.reasoningEffort } : {}),
         ...(ocgKey ? { env: { OCG_GATEWAY_KEY: ocgKey } } : {}),
-        permissionMode: 'defer',
+        permissionMode: run.executionSnapshot?.attendance === 'bounded-unattended' ? 'allow-once' : 'defer',
+        sandbox,
       })
       if (this.stopping) throw new Error('Service stopped before worker prompt')
       live = { handle, questions: new Map(), finalText: [], observed: Promise.resolve(), environmentFailure: null }
@@ -373,6 +436,7 @@ export class RunSupervisor {
       const observed = this.collectEvents(run, generation, live)
       live.observed = observed
       this.domain.bindRun(worker, run.id, generation, { sessionId: handle.sessionId ?? null })
+      if (handle.processFacts) this.domain.recordRunEvent(worker, run.id, generation, 'run.process_facts', handle.processFacts)
       this.domain.markRunRunning(worker, run.id, generation)
       const initialComments = this.domain.listComments(issue.id).filter((comment) => !comment.delivered)
       const initialPrompt = [
@@ -422,6 +486,12 @@ export class RunSupervisor {
       await this.workspace.withTargetLock(project.rootPath, () => this.workspace.disposeRun(run.id)).catch(() => {})
     } catch (error) {
       let rangeExited = !(error instanceof RangeExitUnconfirmedError)
+      if (!handle && error && typeof error === 'object' && 'code' in error && error.code === 'disk_capacity') {
+        this.domain.recordRunEvent(worker, run.id, generation, 'run.process_exit', { rangeExited: true, workerStarted: false })
+        await this.cleanupUnstartedRun(run.id, issue.projectId)
+        this.domain.deferUnstartedRun(worker, run.id, generation, errorText(error))
+        return
+      }
       const environment = classifyRuntimeEnvironmentError(error)
       if (environment && !live?.environmentFailure) this.domain.blockProjectEnvironment(worker, issue.projectId, environment.code, environment.message)
       if (handle) {
@@ -431,11 +501,12 @@ export class RunSupervisor {
       }
       try {
         // Keep proof behind the generation check if cancellation won this race.
-        if (handle) this.domain.recordRunEvent(worker, run.id, generation, 'run.process_exit', { rangeExited })
+        this.domain.recordRunEvent(worker, run.id, generation, 'run.process_exit', { rangeExited, workerStarted: handle !== null })
         if (!rangeExited) {
           this.domain.requireRunRecovery(worker, run.id, generation, errorText(error))
         } else if (!this.cancelling.has(run.id)) {
           this.domain.failRun(worker, run.id, generation, errorText(error))
+          if (!handle) await this.cleanupUnstartedRun(run.id, issue.projectId)
           if (handle) {
             try { await this.createCheckpoint(run.id, errorText(error)) }
             catch (checkpointError) {
@@ -449,6 +520,20 @@ export class RunSupervisor {
     } finally {
       if (handle) await handle.close().catch(() => {})
       this.active.delete(run.id)
+    }
+  }
+
+  private async cleanupUnstartedRun(runId: string, projectId: string): Promise<void> {
+    if (!this.domain.listStorageReservations().some((row) => row.runId === runId)) return
+    const project = this.domain.getProject(projectId)
+    try {
+      await this.workspace.withTargetLock(project.rootPath, () => this.workspace.disposeRun(runId))
+    } catch (error) {
+      const { lstat } = await import('node:fs/promises')
+      try { await lstat(join(this.workspace.executionRoot, runId)) }
+      catch (missing) {
+        if ((missing as NodeJS.ErrnoException).code === 'ENOENT') this.domain.storageReservationBackend().release(runId)
+      }
     }
   }
 
@@ -519,7 +604,7 @@ export class RunSupervisor {
       throw new ApplicationError('range_unconfirmed', 409, 'Only confirmed stopped unfinished runs can produce a checkpoint')
     }
     const id = randomUUID()
-    const manifest = await this.workspace.freezeDelivery({ runId, deliveryId: id, worker: { rangeExited: true } })
+    const manifest = await this.workspace.saveCheckpoint({ runId, checkpointId: id, worker: { rangeExited: true } })
     return this.domain.recordCheckpoint(worker, { id, runId, issueId: run.issueId,
       baseRef: run.baseRef, files: manifest.files, manifestSha256: manifest.manifestSha256, reason: redact(reason) })
   }
@@ -532,13 +617,20 @@ export class RunSupervisor {
     const runId = randomUUID()
     const task = (async () => {
       let rangeExited = true
-      const prepared = await this.workspace.withTargetLock(project.rootPath, () => this.workspace.prepareRun({
-        runId, kind: project.kind, projectRoot: project.rootPath, targetBranch: project.targetBranch,
-      }))
+      const estimate = await this.workspace.estimateRunReservation({ kind: project.kind, projectRoot: project.rootPath,
+        targetBranch: project.targetBranch })
+      this.domain.reserveStorageOperation(runId, { ...estimate, observation: await this.workspace.ledger.observe(),
+        policyDigest: this.domain.storagePolicyDigest() })
       try {
-        const home = await this.prepareDshHome(runId)
+        const prepared = await this.workspace.withTargetLock(project.rootPath, () => this.workspace.prepareRun({
+          runId, kind: project.kind, projectRoot: project.rootPath, targetBranch: project.targetBranch,
+          ...(estimate.sourceRef ? { pinnedBaseRef: estimate.sourceRef } : {}),
+        }))
+        const home = await this.prepareDshHome(runId, prepared.homePath)
+        await prepareNativeSandboxDirectory(join(prepared.executionPath!, 'box'), home, prepared.tmpPath!)
         const readiness = this.runtime.checkReadiness
-          ? await this.runtime.checkReadiness({ cwd: prepared.workspacePath, dshHome: home })
+          ? await this.runtime.checkReadiness({ cwd: prepared.workspacePath, dshHome: home,
+            sandbox: { mode: 'workspace-write', workspaceRoot: join(prepared.executionPath!, 'box'), tempRoot: prepared.tmpPath!, accessMode: 'workspace-write', requireFull: false } })
           : { ready: false, code: 'readiness_unsupported', diagnostic: 'This executor does not implement environment checks' }
         if (this.stopping) throw new ApplicationError('service_stopping', 503, 'Lachesis stopped during the check')
         if (readiness.ready) this.domain.clearProjectEnvironment(worker, projectId, expectedVersion)
@@ -552,7 +644,23 @@ export class RunSupervisor {
         }
         throw error
       } finally {
-        if (rangeExited) await this.workspace.withTargetLock(project.rootPath, () => this.workspace.disposeRun(runId)).catch(() => {})
+        if (rangeExited) {
+          this.domain.confirmStorageOperationExit(runId)
+          try {
+            await this.workspace.withTargetLock(project.rootPath, () => this.workspace.disposeRun(runId))
+          } catch (error) {
+            // Preparation can fail before writing its control record. Release
+            // only when the private execution directory is actually absent.
+            const { lstat } = await import('node:fs/promises')
+            try { await lstat(join(this.workspace.executionRoot, runId)) }
+            catch (missing) {
+              if ((missing as NodeJS.ErrnoException).code === 'ENOENT'
+                && this.domain.listStorageReservations().some((row) => row.runId === runId)) {
+                this.domain.storageReservationBackend().release(runId)
+              }
+            }
+          }
+        }
       }
     })()
     this.probes.add(task)

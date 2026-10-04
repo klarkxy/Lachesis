@@ -8,13 +8,20 @@ import type { DomainService } from '@lachesis/plugin-domain'
 import type { DshAcpExecutor, RunHandle, RunSpec } from '@lachesis/plugin-runtime-dsh'
 import type { LachesisHarnessDsh } from '@lachesis/plugin-runtime-dsh/plugin'
 import { Workspace } from '@lachesis/plugin-workspace'
+import { MemoryReservationBackend } from '../../plugin-workspace/src/ledger.ts'
 import LachesisScheduler from '../src/plugin.ts'
 import { RunSupervisor } from '../src/supervisor.ts'
 
-/** Only the two methods the scheduler's claim scan reads. */
+/** No queued issues; exercise Cordis injection without a model or database. */
 const domain = {
   getSchedulerSettings: () => ({ globalMaxActive: 4 }),
   claimNextReadyIssue: () => null,
+  storageReservationBackend: () => new MemoryReservationBackend(),
+  getStoragePolicy: () => null,
+  storagePolicyDigest: () => '0'.repeat(64),
+  setStorageAdmissions: () => {},
+  setExecutionPolicySupport: () => {},
+  getSchedulerSnapshot: () => ({ decisions: [] }),
 } as unknown as DomainService
 
 function probeHandle(spec: RunSpec): RunHandle {

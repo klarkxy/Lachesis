@@ -10,6 +10,8 @@ import type {
   Page,
   SchedulerSettings,
   UpdateIssuePlanInput,
+  StoragePolicy,
+  Project,
 } from '@lachesis/contracts'
 import type { DomainService, IdempotencyRef } from '@lachesis/plugin-domain'
 import LachesisDomain from '@lachesis/plugin-domain/plugin'
@@ -263,6 +265,28 @@ export class LachesisApplication implements OperationInvoker {
     })
   }
 
+  private async withStorageOperation<T>(project: Project, action: () => Promise<T>): Promise<T> {
+    const id = `operation-${crypto.randomUUID()}`
+    const estimate = await this.supervisor.workspace.estimateRunReservation({ kind: project.kind,
+      projectRoot: project.rootPath, targetBranch: project.targetBranch })
+    this.domain.reserveStorageOperation(id, { ...estimate, observation: await this.supervisor.workspace.ledger.observe(),
+      policyDigest: this.domain.storagePolicyDigest() })
+    let confirmed = true
+    try {
+      const result = await action()
+      if (result && typeof result === 'object' && 'status' in result && result.status === 'recovery_required') confirmed = false
+      return result
+    } catch (error) {
+      if (error instanceof RangeExitUnconfirmedError || (error && typeof error === 'object' && 'code' in error && error.code === 'recovery_required')) confirmed = false
+      throw error
+    } finally {
+      if (confirmed) {
+        this.domain.confirmStorageOperationExit(id)
+        this.domain.storageReservationBackend().release(id)
+      }
+    }
+  }
+
   private idem(context: OperationContext, body: unknown): IdempotencyRef {
     if (!context.idempotencyKey) {
       throw new ApplicationError('idempotency_key_required', 400, 'Idempotency-Key is required')
@@ -278,6 +302,17 @@ export class LachesisApplication implements OperationInvoker {
     this.guardPermission(context.actor, operation)
     const actor = { kind: 'operator' as const, id: context.actor.id }
     switch (operation) {
+      case 'storage.get': {
+        if (context.actor.kind !== 'browser') throw new ApplicationError('permission_denied', 403, 'Only the local operator can inspect service storage')
+        return this.supervisor.workspace.ledger.status()
+      }
+      case 'storage.update': {
+        if (context.actor.kind !== 'browser') throw new ApplicationError('permission_denied', 403, 'Only the local operator can edit storage policy')
+        const policy = this.domain.saveStoragePolicy(actor, input as unknown as StoragePolicy)
+        this.supervisor.workspace.ledger.setPolicy(policy)
+        this.supervisor.wake()
+        return this.supervisor.workspace.ledger.status()
+      }
       case 'scheduler.get': {
         const projectId = typeof input.projectId === 'string' ? input.projectId : undefined
         if (projectId) this.guardProject(context.actor, projectId)
@@ -331,7 +366,11 @@ export class LachesisApplication implements OperationInvoker {
       case 'profile.list': return this.domain.listProfiles()
       case 'profile.capabilities': {
         if (context.actor.kind !== 'browser') throw new ApplicationError('permission_denied', 403, 'Only the local operator can inspect model capabilities')
-        return this.supervisor.probeProfileCapabilities(text(input, 'providerRef'), text(input, 'modelId'))
+        if (input.boundaryMode !== undefined && (typeof input.boundaryMode !== 'string' || !['whole-range', 'native-tools'].includes(input.boundaryMode))) {
+          throw new ApplicationError('invalid_input', 400, 'Invalid execution boundary')
+        }
+        return this.supervisor.probeProfileCapabilities(text(input, 'providerRef'), text(input, 'modelId'),
+          input.boundaryMode === 'native-tools' ? 'native-tools' : 'whole-range')
       }
       case 'profile.get': return this.domain.getProfile(text(input, 'profileId'))
       case 'profile.create': {
@@ -474,7 +513,14 @@ export class LachesisApplication implements OperationInvoker {
         const issueId = text(input, 'issueId')
         this.guardIssue(context.actor, issueId)
         const issue = this.domain.getIssue(issueId)
+        const receipt = this.domain.getIdempotencyResult<{ id: string }>(actor, issue.projectId,
+          'issue.integrate', this.idem(context, input))
+        if (receipt) {
+          const current = this.domain.getApplication(receipt.id)
+          if (current.status !== 'queued') return current
+        }
         if (issue.status !== 'accepted') throw new ApplicationError('not_accepted', 409, 'Accept the delivery before preparing an application')
+        return this.withStorageOperation(this.domain.getProject(issue.projectId), async () => {
         const application = this.domain.createIntegration(actor, issueId, text(input, 'deliveryId'), number(input, 'expectedIssueVersion'), this.idem(context, input))
         return this.serialProject(application.projectId, async () => {
           const current = this.domain.getApplication(application.id)
@@ -501,6 +547,7 @@ export class LachesisApplication implements OperationInvoker {
             })
           }
         })
+        })
       }
       case 'application.get': {
         const id = text(input, 'applicationId')
@@ -516,6 +563,15 @@ export class LachesisApplication implements OperationInvoker {
         const id = text(input, 'applicationId')
         this.guardApplication(context.actor, id)
         const expectedTarget = input.expectedTarget === null ? null : text(input, 'expectedTarget')
+        const before = this.domain.getApplication(id)
+        const receipt = this.domain.getIdempotencyResult<{ id: string }>(actor, before.projectId,
+          'application.apply', this.idem(context, input))
+        if (receipt && before.status !== 'applying') return before
+        if (before.status === 'applied') {
+          this.domain.applyApplication(actor, id, expectedTarget, this.idem(context, input))
+          return this.domain.getApplication(id)
+        }
+        return this.withStorageOperation(this.domain.getProject(before.projectId), async () => {
         const application = this.domain.applyApplication(actor, id, expectedTarget, this.idem(context, input))
         return this.serialProject(application.projectId, async () => {
           const current = this.domain.getApplication(id)
@@ -537,6 +593,7 @@ export class LachesisApplication implements OperationInvoker {
               status: 'recovery_required', diagnostic: error instanceof Error ? error.message : String(error),
             })
           }
+        })
         })
       }
       case 'events.list': {

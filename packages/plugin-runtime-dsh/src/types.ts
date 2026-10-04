@@ -50,29 +50,77 @@ export type PermissionMode = 'defer' | 'allow-once' | 'reject-once'
  */
 export type RunSandboxMode = Exclude<SandboxMode, 'danger-full-access'>
 
-/** Every Run harness range is confined under this mode unless a caller asks for another. */
+/** Every whole-range harness uses this mode unless a caller asks for another. */
 export const DEFAULT_RUN_SANDBOX_MODE: RunSandboxMode = 'workspace-write'
 
-/** How the caller asks for this Run's harness range to be confined. */
+/**
+ * `whole-range` applies the outer local sandbox to the harness.
+ * `native-tools` keeps the native Job and the pinned DSH workspace-write tools,
+ * and does not apply that outer confine. Omitted means whole-range.
+ * A failed Run never switches this choice.
+ */
+export type RunBoundaryMode = 'whole-range' | 'native-tools'
+
+/** Outer confinement remains the default. `native-tools` is explicit. */
+export const DEFAULT_RUN_BOUNDARY_MODE: RunBoundaryMode = 'whole-range'
+
+/** How the caller asks for this Run's harness range to be bounded. */
 export interface RunSandboxSpec {
   /**
-   * File-effect mode for the whole harness range. Default
-   * {@link DEFAULT_RUN_SANDBOX_MODE}. `read-only` denies every write the
-   * harness range attempts outside the granted root.
-   *
-   * There is deliberately no way to opt out: a Run is either confined or it is
-   * refused at startup, never spawned unconfined.
+   * Explicit Run-owned writable root (`execution/<runId>/box`).
+   * The pinned runtime requires it. Custom fixture commands may omit it.
+   */
+  workspaceRoot?: string
+  /**
+   * Private temp parent (`execution/<runId>/tmp`), the direct `tmp` sibling of
+   * `workspaceRoot`. Omitted keeps the fixture temp beside the private home.
+   */
+  tempRoot?: string
+  accessMode?: 'read-only' | 'workspace-write'
+  requireFull?: boolean
+  /**
+   * File-effect mode. Default {@link DEFAULT_RUN_SANDBOX_MODE}.
+   * Under `whole-range`, `read-only` denies writes outside the granted root.
+   * Under `native-tools`, only `workspace-write` is accepted; read-only and
+   * full are refused before readiness or spawn.
    */
   mode?: RunSandboxMode
+  /** Default {@link DEFAULT_RUN_BOUNDARY_MODE}. Never inferred from a failure. */
+  boundaryMode?: RunBoundaryMode
 }
 
-/** What the harness range was actually confined by, and how completely. */
-export interface RunSandboxFacts {
+/**
+ * Boundary evidence for one Run.
+ * `whole-range` records the outer wrap. `native-tools` records a trusted-host
+ * harness and a separate tool enforcement; it does not describe the harness
+ * itself as a partial sandbox.
+ */
+export type RunSandboxFacts = WholeRangeSandboxFacts | NativeToolsSandboxFacts
+
+/** Outer wrap facts. `boundaryMode` is omitted by older readers' fixtures. */
+export interface WholeRangeSandboxFacts {
+  boundaryMode?: 'whole-range'
   mode: RunSandboxMode
-  /** The single writable root the harness range was granted. */
+  /** The single writable root the outer wrap granted the harness. */
   workspaceRoot: string
   enforcement: SandboxEnforcement
   /** The backend's own denial dialect; empty when the backend names none. */
+  denialSignatures: readonly string[]
+}
+
+/** Trusted harness plus the pinned tool sandbox. No outer harness confinement. */
+export interface NativeToolsSandboxFacts {
+  boundaryMode: 'native-tools'
+  mode: RunSandboxMode
+  /** Validated run box. Not an outer writable grant on the harness. */
+  workspaceRoot: string
+  /** Actual native session tool boundary, distinct from the private box. */
+  toolWorkspaceRoot?: string
+  /** Private SDK temporary parent; children receive separate capabilities. */
+  tempRoot?: string
+  harnessEnforcement: 'trusted-host'
+  /** Pinned tool backend. `partial` on win32. This is not harness confinement. */
+  toolEnforcement: 'full' | 'partial' | 'probed'
   denialSignatures: readonly string[]
 }
 
@@ -110,9 +158,8 @@ export interface ProcessFacts {
   stdoutDisposition: 'pipe'
   stdinDisposition: 'pipe'
   /**
-   * The wrap this Run was actually spawned under. Present on every Run: a
-   * confined range is not an opt-in, so its absence would mean the spawn
-   * bypassed confinement entirely.
+   * Boundary evidence. whole-range carries the outer wrap. native-tools
+   * carries trusted-host Job ownership and separate tool enforcement.
    */
   sandbox: RunSandboxFacts
 }
@@ -137,8 +184,9 @@ export interface RunSpec {
    */
   env?: NodeJS.ProcessEnv
   /**
-   * ACP child argv. Default is local `@deepseek-ai/dsh` `--profile acp` when installed
-   * under this package, otherwise a PATH `dsh`.
+   * ACP child argv. Default is the package-local pinned `@deepseek-ai/dsh`
+   * `--profile acp`. A missing pin is an error; PATH `dsh` is not used.
+   * An explicit command remains the custom-transport test seam.
    */
   command?: readonly string[]
   permissionMode?: PermissionMode
@@ -232,9 +280,25 @@ export interface RunHandle {
   readonly done: Promise<RunOutcome>
 }
 
+export interface ExecutionPolicyRequest {
+  accessMode: 'read-only' | 'workspace-write'
+  requireFull: boolean
+}
+
+export interface ExecutionPolicySupport {
+  supported: boolean
+  diagnostic: string | null
+}
+
 export interface DshAcpExecutor {
+  /**
+   * Queue-time gate. An unsupported issue stays unclaimed so one read-only or
+   * full request cannot block the rest of the project. Omitted means the
+   * caller has not asked this executor to refuse a policy up front.
+   */
+  executionPolicySupport?(policy: ExecutionPolicyRequest): ExecutionPolicySupport
   /** Only pass a fresh service-owned Run workspace, never the user's project target. */
-  checkReadiness?(spec: Pick<RunSpec, 'cwd' | 'dshHome'>): Promise<RuntimeReadiness>
+  checkReadiness?(spec: Pick<RunSpec, 'cwd' | 'dshHome' | 'sandbox'>): Promise<RuntimeReadiness>
   start(spec: RunSpec): Promise<RunHandle>
   closeAll(): Promise<void>
 }

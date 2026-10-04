@@ -1,9 +1,10 @@
-import type { DshAcpExecutor, ExecutorOptions, RunHandle, RunSpec, RuntimeReadiness } from './types.ts'
+import type { DshAcpExecutor, ExecutionPolicyRequest, ExecutionPolicySupport, ExecutorOptions, RunHandle, RunSpec, RuntimeReadiness } from './types.ts'
 import { SubprocessHost } from './subprocess.ts'
 import { AcpRun } from './run.ts'
 import { finiteTimeout, withDeadline } from './deadline.ts'
 import { checkToolReadiness, readinessIdentity } from './readiness.ts'
 import { RangeExitUnconfirmedError, RuntimeEnvironmentError } from './errors.ts'
+import { assertNativeToolsBoundary, assertPinnedWorkspaceRoot, nativeExecutionPolicySupport, sandboxCacheFingerprint } from './sandbox.ts'
 
 export class DshAcpRuntime implements DshAcpExecutor {
   private readonly options: ExecutorOptions
@@ -30,8 +31,14 @@ export class DshAcpRuntime implements DshAcpExecutor {
     if (options.bindProcessExit !== false) this.bindExit()
   }
 
+  executionPolicySupport(policy: ExecutionPolicyRequest): ExecutionPolicySupport {
+    return nativeExecutionPolicySupport(policy)
+  }
+
   async start(spec: RunSpec): Promise<RunHandle> {
     if (this.closing) throw new Error('executor is closing')
+    assertNativeToolsBoundary(spec)
+    assertPinnedWorkspaceRoot(spec)
     const generation = this.generation
     // An explicit command is the existing trusted fixture/custom-transport seam.
     // Production uses the bundled dsh command and cannot skip a failed probe.
@@ -72,8 +79,9 @@ export class DshAcpRuntime implements DshAcpExecutor {
     }
   }
 
-  checkReadiness(spec: Pick<RunSpec, 'cwd' | 'dshHome'>): Promise<RuntimeReadiness> {
+  checkReadiness(spec: Pick<RunSpec, 'cwd' | 'dshHome' | 'sandbox'>): Promise<RuntimeReadiness> {
     if (this.closing) return Promise.resolve({ ready: false, code: 'executor_closing', diagnostic: 'executor is closing' })
+    assertNativeToolsBoundary(spec)
     const generation = this.generation
     const key = this.readinessKey(spec)
     this.readinessReceipts.delete(key)
@@ -102,8 +110,8 @@ export class DshAcpRuntime implements DshAcpExecutor {
     return check
   }
 
-  private readinessKey(spec: Pick<RunSpec, 'cwd' | 'dshHome'>): string {
-    return JSON.stringify([spec.cwd, spec.dshHome])
+  private readinessKey(spec: Pick<RunSpec, 'cwd' | 'dshHome' | 'sandbox'>): string {
+    return JSON.stringify([spec.cwd, spec.dshHome, sandboxCacheFingerprint(spec.sandbox)])
   }
 
   async closeAll(): Promise<void> {

@@ -84,7 +84,7 @@ test('a Run is spawned confined, and a write outside the granted root is denied 
     provider: 'provider-a',
     model: 'model-a',
     command: fixtureCommand(),
-    env: { LACHESIS_FIXTURE_ESCAPE: escapeName },
+    env: { LACHESIS_FIXTURE_ESCAPE: escapeName, LACHESIS_FIXTURE_ESCAPE_PATH: escapePath },
   })
   const events = sinkEvents(run)
 

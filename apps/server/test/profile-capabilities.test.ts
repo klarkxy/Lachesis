@@ -37,9 +37,14 @@ test('Profile probe snapshots config, returns actual ACP reasoning options, and 
   process.env.OCG_GATEWAY_KEY = 'synthetic-probe-key'
   let closed = false
   let observedRoot = ''
+  let observedHome = ''
   const runtime: DshAcpExecutor = {
     async start(spec) {
       observedRoot = join(spec.cwd, '..')
+      observedHome = spec.dshHome
+      assert.equal(spec.sandbox?.workspaceRoot, observedRoot)
+      assert.equal(spec.sandbox?.tempRoot, join(observedRoot, '..', 'tmp'))
+      assert.equal(spec.dshHome, join(observedRoot, 'state', 'home'))
       assert.equal(await readFile(join(spec.dshHome, 'cordis.patch.yml'), 'utf8'), 'provider: test\n')
       assert.deepEqual(spec.env, { OCG_GATEWAY_KEY: 'synthetic-probe-key' })
       assert.equal(spec.permissionMode, 'reject-once')
@@ -61,7 +66,7 @@ test('Profile probe snapshots config, returns actual ACP reasoning options, and 
       { value: '', name: 'Provider default' }, { value: 'low', name: 'Low' }, { value: 'high', name: 'High' },
     ] })
     assert.equal(closed, true)
-    await assert.rejects(readFile(join(observedRoot, 'dsh-home', 'cordis.patch.yml')))
+    await assert.rejects(readFile(join(observedHome, 'cordis.patch.yml')))
     assert.equal(await readFile(join(patchDir, 'cordis.patch.yml'), 'utf8'), 'provider: test\n')
   } finally {
     await app.close()
@@ -87,6 +92,12 @@ test('Profile probe returns no options when ACP omits reasoning and denies token
     await assert.rejects(app.invoke('profile.capabilities', { providerRef: 'p', modelId: 'm' },
       { actor: token, idempotencyKey: null }),
     (error) => error instanceof ApplicationError && error.code === 'permission_denied')
+    assert.equal(starts, 0)
+    for (const boundaryMode of [['native-tools'], null, {}]) {
+      await assert.rejects(app.invoke('profile.capabilities', { providerRef: 'p', modelId: 'm', boundaryMode },
+        { actor: browser, idempotencyKey: null }),
+      (error) => error instanceof ApplicationError && error.code === 'invalid_input')
+    }
     assert.equal(starts, 0)
     assert.deepEqual(await app.invoke('profile.capabilities', { providerRef: 'p', modelId: 'm' },
       { actor: browser, idempotencyKey: null }), { providerRef: 'p', modelId: 'm', reasoningOptions: [] })

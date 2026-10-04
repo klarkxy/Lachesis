@@ -12,7 +12,6 @@ import {
   ACP_MODEL_CONFIG_ID,
   ACP_REASONING_CONFIG_ID,
   acpModelOptionValue,
-  DEFAULT_RUN_SANDBOX_MODE,
   type DeliveryStatus,
   type PermissionAnswer,
   type PermissionOption,
@@ -34,7 +33,20 @@ import { assertAbsoluteDirectory, assertIsolatedDshHome } from './paths.ts'
 import { connectAcpClient, methods, PROTOCOL_VERSION, type AcpAgent } from './acp.ts'
 import { disposeAcpChild } from './subprocess.ts'
 import type { SubprocessHost } from './subprocess.ts'
-import { classifySandboxOutcome, runSandboxPolicy, runSandboxRoot, sandboxFacts } from './sandbox.ts'
+import {
+  assertExecutionPolicySupported,
+  assertNativeToolsBoundary,
+  assertPinnedWorkspaceRoot,
+  classifySandboxOutcome,
+  gateConfinedWrap,
+  mapAgentlessWindowsTemp,
+  nativeToolsFacts,
+  privateRunEnv,
+  resolveRunGrant,
+  runSandboxPolicy,
+  sandboxFacts,
+  type ResolvedRunGrant,
+} from './sandbox.ts'
 import { defaultAcpCommand, resolveArgv } from './command.ts'
 import { withDeadline } from './deadline.ts'
 
@@ -141,11 +153,28 @@ export class AcpRun implements RunHandle {
   private async activateOnce(): Promise<void> {
     const cwd = assertAbsoluteDirectory('cwd', this.spec.cwd)
     const dshHome = assertIsolatedDshHome(this.spec.dshHome)
+    // Refuse native-tools read-only, full, and custom commands before any
+    // directory create, readiness, wrap, or spawn. whole-range is unchanged.
+    assertNativeToolsBoundary(this.spec)
+    assertExecutionPolicySupported(this.spec)
+    assertPinnedWorkspaceRoot(this.spec)
+    const grant = await resolveRunGrant({ cwd, dshHome, sandbox: this.spec.sandbox })
+    // Private env is applied after the caller env, so native-tools can pin
+    // DSH_PERMISSION_MODE and the caller cannot widen it.
+    const childEnv = {
+      ...this.spec.env,
+      ...await privateRunEnv({
+        dshHome,
+        workspaceRoot: grant.workspaceRoot,
+        tempRoot: grant.tempRoot,
+        boundaryMode: grant.boundaryMode,
+      }),
+    }
     const subprocess = this.options.host.subprocess
     const resolved = await withDeadline('ACP executable resolution', this.options.startupTimeoutMs ?? 120_000,
-      () => resolveArgv(subprocess, this.spec.command ?? defaultAcpCommand(), this.spec.env), this.lifetime.signal)
+      () => resolveArgv(subprocess, this.spec.command ?? defaultAcpCommand(), childEnv), this.lifetime.signal)
     this.lifetime.signal.throwIfAborted()
-    const argv = await this.confineArgv(resolved, cwd, dshHome)
+    const argv = await this.confineArgv(resolved, grant)
     const graceMs = this.options.graceMs ?? DEFAULT_GRACE_MS
     const child = this.options.host.spawn({
       argv,
@@ -157,10 +186,7 @@ export class AcpRun implements RunHandle {
         stderr: { maxBytes: 64 * 1024 },
         ...this.options.requestControlChannel === false ? {} : { control: 'pipe' as const },
       },
-      env: {
-        ...this.spec.env,
-        DSH_HOME: dshHome,
-      },
+      env: childEnv,
     })
     this.child = child
     this.facts = {
@@ -266,21 +292,24 @@ export class AcpRun implements RunHandle {
   }
 
   /**
-   * Confine the harness range before it is spawned. This is the boundary the
-   * readiness probe only ever exercised on its own short-lived process: here the
-   * same enforcement governs the worker that will actually touch the workspace.
-   * The provider fails closed, so a host that cannot confine never reaches a
-   * spawn.
+   * whole-range confines the harness before spawn. native-tools skips only that
+   * outer confine and returns the pinned argv to the same native Job host.
+   * A confine failure is not retried on the other boundary.
    */
-  private async confineArgv(argv: readonly string[], cwd: string, dshHome: string): Promise<readonly string[]> {
-    const mode = this.spec.sandbox?.mode ?? DEFAULT_RUN_SANDBOX_MODE
-    const root = runSandboxRoot(cwd, dshHome)
-    const policy = runSandboxPolicy(mode, root)
+  private async confineArgv(argv: readonly string[], grant: ResolvedRunGrant): Promise<readonly string[]> {
+    if (grant.boundaryMode === 'native-tools') {
+      this.sandboxFacts = nativeToolsFacts(grant.mode, grant.workspaceRoot, process.platform, this.spec.cwd, grant.tempRoot)
+      this.sandboxRules = []
+      return argv
+    }
+    const policy = runSandboxPolicy(grant.mode, grant.workspaceRoot)
     const wrap = await withDeadline('sandbox confinement wrap', this.options.startupTimeoutMs ?? 120_000,
-      (signal) => this.options.host.confine(argv, policy, signal), this.lifetime.signal)
-    this.sandboxFacts = sandboxFacts(mode, wrap, policy.workspaceRoot)
+      (signal) => gateConfinedWrap(grant, argv, policy,
+        (wrapped, confined) => this.options.host.confine(wrapped, confined, signal)), this.lifetime.signal)
+    this.sandboxFacts = sandboxFacts(grant.mode, wrap, policy.workspaceRoot)
     this.sandboxRules = wrap.runnerFailureRules
-    return wrap.argv
+    if (grant.tempRoot === undefined || process.platform !== 'win32') return wrap.argv
+    return mapAgentlessWindowsTemp(wrap.argv, policy, grant.tempRoot)
   }
 
   /**

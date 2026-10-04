@@ -1,5 +1,5 @@
-import { randomUUID } from 'node:crypto'
-import { lstat, realpath, stat, unlink } from 'node:fs/promises'
+import { createHash, randomUUID } from 'node:crypto'
+import { lstat, readFile, realpath, stat, unlink } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, parse, resolve } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
@@ -11,13 +11,15 @@ import SandboxedFileSystem from '@deepseek-ai/dsh-fs-sandbox'
 import SandboxPwshExecutor from '@deepseek-ai/dsh-pwsh-sandbox'
 import SandboxBashExecutor from '@deepseek-ai/dsh-bash-sandbox'
 import type { ShellRunResult } from '@deepseek-ai/dsh-shell'
+import type { DshEnvironment } from '@deepseek-ai/dsh-subprocess'
 import { assertAbsoluteDirectory, assertIsolatedDshHome } from './paths.ts'
 import { requireNativeWindowsJob } from './subprocess.ts'
 import { withDeadline } from './deadline.ts'
-import { classifyRuntimeEnvironmentError, diagnosticText, RangeExitUnconfirmedError, RuntimeEnvironmentError } from './errors.ts'
+import { classifyRuntimeEnvironmentError, diagnosticText, ExecutionPolicyError, RangeExitUnconfirmedError, RuntimeEnvironmentError } from './errors.ts'
+import { assertExecutionPolicySupported, assertNativeToolsBoundary, bindAgentlessTempRoot, privateRunEnv, resolveRunGrant, sandboxCacheFingerprint } from './sandbox.ts'
 import { DSH_VERSION, type RunSpec, type RuntimeReadiness } from './types.ts'
 
-type ReadinessSpec = Pick<RunSpec, 'cwd' | 'dshHome'>
+type ReadinessSpec = Pick<RunSpec, 'cwd' | 'dshHome' | 'sandbox'>
 
 /** Test seam over real dsh tool backends, not a second implementation of confinement. */
 export interface ToolProbeBackend {
@@ -27,7 +29,9 @@ export interface ToolProbeBackend {
   dispose(): Promise<void>
 }
 
-/** Metadata only: never read a provider config or credential to construct a receipt. */
+/** Private config is bound by a digest; no config values enter the receipt.
+ * ACL initialization changes ctime on Windows without changing configuration.
+ */
 export async function readinessIdentity(spec: ReadinessSpec): Promise<string> {
   const cwd = assertAbsoluteDirectory('cwd', spec.cwd)
   const home = assertIsolatedDshHome(spec.dshHome)
@@ -48,11 +52,13 @@ export async function readinessIdentity(spec: ReadinessSpec): Promise<string> {
   try {
     const patch = await lstat(join(home, 'cordis.patch.yml'))
     if (!patch.isFile() || patch.isSymbolicLink()) throw new Error('Run configuration must be a regular file')
-    parts.push(String(patch.dev), String(patch.ino), patch.size, patch.mtimeMs, patch.ctimeMs)
+    const digest = createHash('sha256').update(await readFile(join(home, 'cordis.patch.yml'))).digest('hex')
+    parts.push(String(patch.dev), String(patch.ino), patch.size, patch.mtimeMs, digest)
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
     parts.push(null)
   }
+  parts.push(sandboxCacheFingerprint(spec.sandbox))
   return JSON.stringify(parts)
 }
 
@@ -72,17 +78,35 @@ export async function createToolProbeBackend(
   timeoutMs: number,
   createContext: () => Context = () => new Context(),
 ): Promise<ToolProbeBackend> {
+  assertNativeToolsBoundary(spec)
+  assertExecutionPolicySupported(spec)
+  const cwd = assertAbsoluteDirectory('cwd', spec.cwd)
+  const dshHome = assertIsolatedDshHome(spec.dshHome)
+  const grant = await resolveRunGrant({ cwd, dshHome, sandbox: spec.sandbox })
+  const privateEnv = await privateRunEnv({
+    dshHome,
+    workspaceRoot: grant.workspaceRoot,
+    tempRoot: grant.tempRoot,
+    boundaryMode: grant.boundaryMode,
+  })
+  // native-tools exercises the session cwd the DSH tools will use. whole-range
+  // keeps the outer box grant. Home and temp were already checked against that box.
+  const policyRoot = grant.boundaryMode === 'native-tools' ? cwd : grant.workspaceRoot
+  const dshEnv: DshEnvironment = { DSH_HOME: privateEnv.DSH_HOME ?? dshHome }
   await requireNativeWindowsJob()
   const ctx = createContext()
   try {
     await ctx.plugin(LocalSubprocessRuntime)
     await ctx.plugin(SessionProjectionRegistry)
-    await ctx.plugin(SandboxPolicyService, { mode: 'workspace-write', workspaceRoot: spec.cwd })
+    await ctx.plugin(SandboxPolicyService, { mode: grant.mode, workspaceRoot: policyRoot })
     await ctx.plugin(LocalSandboxProvider, { probeTimeoutMs: Math.min(timeoutMs, 5_000) })
-    await ctx.plugin(SandboxedFileSystem, { cwd: spec.cwd })
-    const config = { cwd: spec.cwd, timeoutMs, maxTimeoutMs: timeoutMs, maxOutputBytes: 8_192, maxSpillBytes: 8_192, graceMs: 1_000 }
+    await ctx.plugin(SandboxedFileSystem, { cwd })
+    const config = { cwd, timeoutMs, maxTimeoutMs: timeoutMs, maxOutputBytes: 8_192, maxSpillBytes: 8_192, graceMs: 1_000 }
     if (process.platform === 'win32') await ctx.plugin(SandboxPwshExecutor, config)
     else await ctx.plugin(SandboxBashExecutor, config)
+    // Shell resolve() without a session is agentless (no sessionId, no SID flags).
+    // Sessionful argv is rejected by the mapper, so a later session grant is left intact.
+    if (process.platform === 'win32' && grant.tempRoot !== undefined) bindAgentlessTempRoot(ctx.sandbox, grant.tempRoot)
     return {
       write: async (path, text, signal) => {
         const target = await ctx.fs.resolve(path, { signal })
@@ -93,8 +117,8 @@ export async function createToolProbeBackend(
         // Agentless policy still runs the same write-grant + restricted-token path.
         // The runner owns its temporary grant, and reports cleanup errors itself.
         const execution = await ctx.shell.execute(ctx.shell.resolve({
-          command, workdir: spec.cwd, timeoutMs, signal, onExpiry: 'kill',
-          env: { DSH_HOME: spec.dshHome }, sandboxPolicy: ctx.sandboxPolicy.resolve(),
+          command, workdir: cwd, timeoutMs, signal, onExpiry: 'kill',
+          env: privateEnv, dshEnv, sandboxPolicy: ctx.sandboxPolicy.resolve(),
         }))
         return execution.result()
       },
@@ -120,6 +144,8 @@ export async function checkToolReadiness(
   timeoutMs = 30_000,
   factory: typeof createToolProbeBackend = createToolProbeBackend,
 ): Promise<RuntimeReadiness> {
+  assertNativeToolsBoundary(spec)
+  assertExecutionPolicySupported(spec)
   let backend: ToolProbeBackend | undefined
   let probePath: string | undefined
   let probeOwned = false
@@ -162,7 +188,7 @@ export async function checkToolReadiness(
   } catch (error) {
     // A factory can fail after mounting its process owner, before it publishes
     // a backend. Its cleanup uncertainty has the same recovery semantics.
-    if (error instanceof RangeExitUnconfirmedError) throw error
+    if (error instanceof RangeExitUnconfirmedError || error instanceof ExecutionPolicyError) throw error
     failure = error
   } finally {
     clearTimeout(timer)
