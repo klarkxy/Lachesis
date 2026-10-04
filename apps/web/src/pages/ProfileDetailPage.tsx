@@ -111,11 +111,19 @@ export function ProfileDetailPage() {
               <dd className="mono">{profile.modelId}</dd>
               <dt>思考强度</dt>
               <dd className="mono">{profile.reasoningEffort ?? '供应商默认'}</dd>
+              <dt>执行边界</dt>
+              <dd>{(() => {
+                if (profile.harnessId !== 'dsh-acp-0.1.7') return '其他执行器'
+                try { return JSON.parse(profile.configJson).boundaryMode === 'native-tools' ? '原生工具隔离（本机运行时受信任）' : '整进程隔离' }
+                catch { return '配置未记录' }
+              })()}</dd>
             </dl>
             <p className="muted small" style={{ marginBottom: 0 }}>
-              行为配置仅以上三项。修改配置会产生新的修订，此后启动的实例使用新配置；
-              同一 Profile 的并行实例始终共享同一头像与当前配置。
+              修改配置会产生新的修订，此后领取的实例使用新配置；已领取的实例保留各自冻结的配置。
             </p>
+            {profile.harnessId !== 'dsh-acp-0.1.7' ? (
+              <p className="muted small">此 Profile 使用其他执行器，第一阶段仅支持原生 DSH。</p>
+            ) : null}
           </section>
 
           <section className="panel" aria-label="Profile 履历">

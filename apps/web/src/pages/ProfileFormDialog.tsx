@@ -9,9 +9,17 @@ import { ErrorBox, Field } from '@/components/ui'
 
 /**
  * Profile 表单（新建 / 编辑 / 复制）。
- * 行为配置仅供应商、模型、思考强度三项（冻结决策 D07）；
+ * 保存模型路由和明确的执行边界；
  * 名称与头像为展示元数据，不携带 persona、技能或岗位设定。
  */
+function savedDshConfig(profile?: Profile): Record<string, unknown> {
+  if (profile?.harnessId !== 'dsh-acp-0.1.7') return {}
+  try {
+    const value: unknown = JSON.parse(profile.configJson)
+    return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
+  } catch { return {} }
+}
+
 export function ProfileFormDialog({
   open,
   onClose,
@@ -32,6 +40,7 @@ export function ProfileFormDialog({
   const [providerRef, setProviderRef] = useState('')
   const [modelId, setModelId] = useState('')
   const [effort, setEffort] = useState('')
+  const [boundaryMode, setBoundaryMode] = useState<'whole-range' | 'native-tools'>('native-tools')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<unknown>(null)
   const [capabilities, setCapabilities] = useState<ProfileCapabilities | null>(null)
@@ -49,6 +58,7 @@ export function ProfileFormDialog({
       setProviderRef(profile?.providerRef ?? '')
       setModelId(profile?.modelId ?? '')
       setEffort(profile?.reasoningEffort ?? '')
+      setBoundaryMode(mode === 'create' || savedDshConfig(profile).boundaryMode === 'native-tools' ? 'native-tools' : 'whole-range')
       setError(null)
       setCapabilities(null)
       setCapabilityError(null)
@@ -57,7 +67,8 @@ export function ProfileFormDialog({
   }, [open, mode, profile])
 
   const knownEffort = effort === '' || capabilities?.reasoningOptions.some((option) => option.value === effort) === true
-  const valid = Boolean(name.trim() && providerRef.trim() && modelId.trim() && knownEffort)
+  const valid = Boolean(name.trim() && providerRef.trim() && modelId.trim() && knownEffort &&
+    (mode !== 'edit' || !profile || profile.harnessId === 'dsh-acp-0.1.7'))
   const title = mode === 'edit' ? '编辑 Profile' : mode === 'copy' ? '复制 Profile' : '新建 Profile'
 
   function changeRoute(field: 'provider' | 'model', value: string) {
@@ -78,7 +89,7 @@ export function ProfileFormDialog({
     setChecking(true)
     setCapabilityError(null)
     try {
-      const result = await profilesApi.capabilities(provider, model)
+      const result = await profilesApi.capabilities(provider, model, boundaryMode)
       if (serial === probeSerial.current) setCapabilities(result)
     } catch (err) {
       if (serial === probeSerial.current) setCapabilityError(err)
@@ -98,6 +109,8 @@ export function ProfileFormDialog({
       providerRef: providerRef.trim(),
       modelId: modelId.trim(),
       reasoningEffort: effort.trim() === '' ? null : effort.trim(),
+      configJson: JSON.stringify({ ...savedDshConfig(profile), boundaryMode,
+        providerRef: providerRef.trim(), modelId: modelId.trim(), reasoningEffort: effort.trim() || null }),
     }
     try {
       const saved =
@@ -170,6 +183,23 @@ export function ProfileFormDialog({
             required
             placeholder="例如 deepseek-v4-flash"
           />
+        </Field>
+        <Field label="执行边界" htmlFor={`${id}-boundary`}
+          hint={boundaryMode === 'native-tools'
+            ? '本机运行时受信任，文件与终端工具使用原生沙箱；配置和临时文件保持私有。Windows 暂不支持只读或完整隔离。'
+            : '限制整个执行进程；当前 Windows 原生终端工具与此模式不兼容。'}>
+          <select id={`${id}-boundary`} className="input" value={boundaryMode} disabled={busy}
+            onChange={(e) => {
+              setBoundaryMode(e.target.value as 'whole-range' | 'native-tools')
+              probeSerial.current += 1
+              setCapabilities(null)
+              setCapabilityError(null)
+              setChecking(false)
+              setEffort('')
+            }}>
+            <option value="native-tools">原生工具隔离</option>
+            <option value="whole-range">整进程隔离</option>
+          </select>
         </Field>
         <Field
           label="思考强度"

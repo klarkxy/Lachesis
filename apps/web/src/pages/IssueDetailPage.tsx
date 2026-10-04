@@ -355,9 +355,33 @@ function TaskPanel({ data, dispatchProfile }: { data: IssueDetail; dispatchProfi
           </>
         ) : null}
         <dt>可修改路径</dt>
-        <dd className="mono">{issue.ownedPaths?.length ? issue.ownedPaths.join('，') : '不限'}</dd>
+        <dd className="mono">{issue.accessMode === 'read-only' ? '不可修改项目文件' : issue.ownedPaths?.length ? issue.ownedPaths.join('，') : '不限'}</dd>
         <dt>只读路径</dt>
         <dd className="mono">{issue.readOnlyPaths?.length ? issue.readOnlyPaths.join('，') : '无'}</dd>
+        {issue.accessMode ? (
+          <>
+            <dt>访问模式</dt>
+            <dd>
+              {issue.accessMode === 'read-only' ? (
+                <span className="pill">只读项目</span>
+              ) : (
+                '读写项目'
+              )}
+            </dd>
+          </>
+        ) : null}
+        {issue.attendance ? (
+          <>
+            <dt>执行模式</dt>
+            <dd>{issue.attendance === 'manual' ? '人工值守' : '有界无人值守'}</dd>
+          </>
+        ) : null}
+        {issue.isolationRequirement ? (
+          <>
+            <dt>隔离要求</dt>
+            <dd>{issue.isolationRequirement === 'trusted-host' ? '受信主机' : '完整隔离'}</dd>
+          </>
+        ) : null}
         {issue.clientRequestId ? (
           <>
             <dt>调用方请求号</dt>
@@ -376,6 +400,9 @@ function PlanEditor({ data, onChanged, onConflict }: { data: IssueDetail; onChan
   const [dependsOn, setDependsOn] = useState('')
   const [ownedPaths, setOwnedPaths] = useState('')
   const [readOnlyPaths, setReadOnlyPaths] = useState('')
+  const [accessMode, setAccessMode] = useState<'read-only' | 'workspace-write'>('workspace-write')
+  const [attendance, setAttendance] = useState<'manual' | 'bounded-unattended'>('manual')
+  const [isolationRequirement, setIsolationRequirement] = useState<'trusted-host' | 'full'>('trusted-host')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<unknown>(null)
 
@@ -383,6 +410,9 @@ function PlanEditor({ data, onChanged, onConflict }: { data: IssueDetail; onChan
     setDependsOn(issue.dependsOn.join('\n'))
     setOwnedPaths((issue.ownedPaths ?? []).join('\n'))
     setReadOnlyPaths((issue.readOnlyPaths ?? []).join('\n'))
+    setAccessMode(issue.accessMode ?? 'workspace-write')
+    setAttendance(issue.attendance ?? 'manual')
+    setIsolationRequirement(issue.isolationRequirement ?? 'trusted-host')
     setError(null)
     setEditing(true)
   }
@@ -394,7 +424,8 @@ function PlanEditor({ data, onChanged, onConflict }: { data: IssueDetail; onChan
     setError(null)
     try {
       await issuesApi.updatePlan(issue.id, { expectedIssueVersion: issue.version,
-        dependsOn: lines(dependsOn), ownedPaths: lines(ownedPaths), readOnlyPaths: lines(readOnlyPaths) })
+        dependsOn: lines(dependsOn), ownedPaths: lines(ownedPaths), readOnlyPaths: lines(readOnlyPaths),
+        accessMode, attendance, isolationRequirement })
       setEditing(false)
       onChanged()
     } catch (err) {
@@ -410,7 +441,9 @@ function PlanEditor({ data, onChanged, onConflict }: { data: IssueDetail; onChan
     {!editing ? <button type="button" className="btn btn-sm" onClick={start}>编辑依赖与路径</button> :
       <form onSubmit={(event) => void save(event)}>
         <PlanFields prefix="issue-plan" dependsOn={dependsOn} ownedPaths={ownedPaths} readOnlyPaths={readOnlyPaths}
-          onDependsOn={setDependsOn} onOwnedPaths={setOwnedPaths} onReadOnlyPaths={setReadOnlyPaths} />
+          accessMode={accessMode} attendance={attendance} isolationRequirement={isolationRequirement}
+          onDependsOn={setDependsOn} onOwnedPaths={setOwnedPaths} onReadOnlyPaths={setReadOnlyPaths}
+          onAccessMode={setAccessMode} onAttendance={setAttendance} onIsolationRequirement={setIsolationRequirement} />
         {error ? <ErrorBox error={error} /> : null}
         {!canEdit ? <div className="notice-box">工单已有执行或状态变化，计划不能再编辑。请刷新工单。</div> : null}
         <div className="actions-row"><button type="submit" className="btn btn-primary btn-sm" disabled={busy || !canEdit}>{busy ? '正在保存…' : '保存计划'}</button>

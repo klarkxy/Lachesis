@@ -10,7 +10,7 @@ type LimitsDraft = Pick<SchedulerSettings, 'globalMaxActive' | 'profileLimits' |
 
 const reasonNames: Record<DispatchReason, string> = {
   ready: '可调度', dependency: '等待依赖应用', paused: '项目已暂停', environment: '环境检查未通过',
-  global_capacity: '全局容量已满', profile_capacity: 'Profile 容量已满', provider_capacity: '供应商容量已满',
+  global_capacity: '全局容量已满', storage_capacity: '存储容量不足', profile_capacity: 'Profile 容量已满', provider_capacity: '供应商容量已满',
   profile_unavailable: 'Profile 不可用', scope_busy: '文件范围被占用', running: '执行中',
   needs_input: '等待输入', review: '等待验收', integration: '等待集成', complete: '已完成',
   failed: '执行失败', cancelled: '已取消', recovery: '等待恢复',

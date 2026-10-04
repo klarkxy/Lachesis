@@ -330,6 +330,9 @@ function CreateIssueDialog({
   const [dependsOn, setDependsOn] = useState('')
   const [ownedPaths, setOwnedPaths] = useState('')
   const [readOnlyPaths, setReadOnlyPaths] = useState('')
+  const [accessMode, setAccessMode] = useState<'read-only' | 'workspace-write'>('workspace-write')
+  const [attendance, setAttendance] = useState<'manual' | 'bounded-unattended'>('manual')
+  const [isolationRequirement, setIsolationRequirement] = useState<'trusted-host' | 'full'>('trusted-host')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<unknown>(null)
   // 幂等键在表单打开时生成：同一次提交的重试复用同一键，不会生成重复工单
@@ -346,6 +349,9 @@ function CreateIssueDialog({
       setDependsOn('')
       setOwnedPaths('')
       setReadOnlyPaths('')
+      setAccessMode('workspace-write')
+      setAttendance('manual')
+      setIsolationRequirement('trusted-host')
       setError(null)
       setIdemKey(newIdempotencyKey())
     }
@@ -374,6 +380,9 @@ function CreateIssueDialog({
           dependsOn: lines(dependsOn),
           ownedPaths: lines(ownedPaths),
           readOnlyPaths: lines(readOnlyPaths),
+          accessMode,
+          attendance,
+          isolationRequirement,
           requesterRef: getRequesterRef(),
           clientRequestId: idemKey,
         },
@@ -473,7 +482,9 @@ function CreateIssueDialog({
           </Field>
         ) : null}
         <PlanFields prefix="ci" dependsOn={dependsOn} ownedPaths={ownedPaths} readOnlyPaths={readOnlyPaths}
-          onDependsOn={setDependsOn} onOwnedPaths={setOwnedPaths} onReadOnlyPaths={setReadOnlyPaths} />
+          accessMode={accessMode} attendance={attendance} isolationRequirement={isolationRequirement}
+          onDependsOn={setDependsOn} onOwnedPaths={setOwnedPaths} onReadOnlyPaths={setReadOnlyPaths}
+          onAccessMode={setAccessMode} onAttendance={setAttendance} onIsolationRequirement={setIsolationRequirement} />
         {error ? <ErrorBox error={error} /> : null}
       </form>
       <div className="dialog-foot" style={{ margin: '0 -18px -16px', paddingTop: 12 }}>

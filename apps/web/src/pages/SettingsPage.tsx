@@ -6,6 +6,7 @@ import type { CreatedToken, McpTokenInfo } from '@/api/types'
 import { useToast } from '@/components/Toast'
 import { ErrorBox, Field, IdTag, LoadingBlock } from '@/components/ui'
 import { formatDateTime } from '@/lib/time'
+import { StorageSettingsPanel } from './StorageSettingsPanel'
 
 /** 令牌可授予的权限（与服务端逐条校验的权限名一致，按用途分组）。 */
 const TOKEN_PERMISSION_GROUPS: { label: string; permissions: string[] }[] = [
@@ -59,6 +60,8 @@ export function SettingsPage() {
       <PairingPanel />
 
       <TokensPanel />
+
+      <StorageSettingsPanel />
 
       <section className="panel" aria-label="委托来源">
         <h2 className="section-title">委托来源</h2>

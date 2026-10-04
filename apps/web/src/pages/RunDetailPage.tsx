@@ -166,6 +166,53 @@ export function RunDetailPage() {
                 {run.workspacePath}
               </dd>
             </dl>
+            {run.executionSnapshot ? (
+              <>
+                <hr className="divider" />
+                <h3 className="field-label" style={{ marginBottom: 6 }}>
+                  执行配置快照
+                </h3>
+                <dl className="kv">
+                  <dt>Harness</dt>
+                  <dd className="mono">{run.executionSnapshot.harnessId}</dd>
+                  <dt>访问模式</dt>
+                  <dd>
+                    {run.executionSnapshot.accessMode === 'read-only' ? (
+                      <span className="pill">只读项目</span>
+                    ) : (
+                      '读写项目'
+                    )}
+                  </dd>
+                  <dt>执行模式</dt>
+                  <dd>{run.executionSnapshot.attendance === 'manual' ? '人工值守' : '有界无人值守'}</dd>
+                  <dt>隔离要求</dt>
+                  <dd>{run.executionSnapshot.isolationRequirement === 'trusted-host' ? '受信主机' : '完整隔离'}</dd>
+                  <dt>执行边界</dt>
+                  <dd>{run.executionSnapshot.boundaryMode === 'native-tools' ? '原生工具隔离（本机运行时受信任）'
+                    : run.executionSnapshot.boundaryMode === 'whole-range' ? '整进程隔离' : '历史未记录'}</dd>
+                  <dt>配置</dt>
+                  <dd><JsonDetails data={run.executionSnapshot.config} summary="查看配置" /></dd>
+                </dl>
+              </>
+            ) : null}
+            {run.inputBinding ? (
+              <>
+                <hr className="divider" />
+                <h3 className="field-label" style={{ marginBottom: 6 }}>
+                  输入绑定
+                </h3>
+                <dl className="kv">
+                  <dt>基线引用</dt>
+                  <dd className="mono">{run.inputBinding.baseRef ?? '无'}</dd>
+                  <dt>物化摘要</dt>
+                  <dd className="mono" style={{ overflowWrap: 'anywhere' }}>{run.inputBinding.materializedDigest}</dd>
+                  <dt>捕获保证</dt>
+                  <dd className="mono">{run.inputBinding.captureGuarantee}</dd>
+                  <dt>绑定时间</dt>
+                  <dd>{formatDateTime(run.inputBinding.boundAt)}</dd>
+                </dl>
+              </>
+            ) : null}
             {facts.length > 0 ? (
               <>
                 <hr className="divider" />

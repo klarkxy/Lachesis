@@ -154,6 +154,8 @@ import type {
   RunDetail,
   SchedulerSettings,
   SchedulerSnapshot,
+  StoragePolicy,
+  StorageStatus,
   ProjectDispatchState,
   RunCheckpoint,
   UpdateIssuePlanInput,
@@ -244,6 +246,15 @@ export const schedulerApi = {
   },
 }
 
+export const storageApi = {
+  status(): Promise<StorageStatus> {
+    return api<StorageStatus>('/storage')
+  },
+  updatePolicy(policy: StoragePolicy): Promise<StorageStatus> {
+    return api<StorageStatus>('/storage', { method: 'PATCH', body: policy })
+  },
+}
+
 export interface ProfileCapabilities {
   providerRef: string
   modelId: string
@@ -257,9 +268,9 @@ export const profilesApi = {
   create(input: CreateProfileInput): Promise<Profile> {
     return api<Profile>('/profiles', { method: 'POST', body: input })
   },
-  capabilities(providerRef: string, modelId: string): Promise<ProfileCapabilities> {
+  capabilities(providerRef: string, modelId: string, boundaryMode: 'whole-range' | 'native-tools' = 'whole-range'): Promise<ProfileCapabilities> {
     return api<ProfileCapabilities>('/profiles/capabilities', {
-      method: 'POST', body: { providerRef, modelId },
+      method: 'POST', body: { providerRef, modelId, boundaryMode },
     })
   },
   update(id: Id, patch: Partial<CreateProfileInput> & { disabled?: boolean }, expectedRevision: number): Promise<Profile> {
