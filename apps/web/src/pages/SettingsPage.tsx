@@ -11,15 +11,26 @@ import { StorageSettingsPanel } from './StorageSettingsPanel'
 /** 令牌可授予的权限（与服务端逐条校验的权限名一致，按用途分组）。 */
 const TOKEN_PERMISSION_GROUPS: { label: string; permissions: string[] }[] = [
   { label: '调度与项目控制', permissions: ['scheduler.read', 'project.control'] },
-  { label: '项目与 Profile', permissions: ['project.read', 'profile.read'] },
+  { label: '项目与执行配置', permissions: ['project.read', 'profile.read'] },
   {
-    label: '工单',
+    label: '任务',
     permissions: ['issue.create', 'issue.read', 'issue.comment', 'issue.cancel', 'issue.retry', 'issue.accept', 'issue.rework', 'issue.evaluate'],
   },
   { label: '执行', permissions: ['run.read', 'run.message', 'question.answer'] },
-  { label: '集成与应用', permissions: ['application.prepare', 'application.read', 'application.apply'] },
+  { label: '准备候选与写入', permissions: ['application.prepare', 'application.read', 'application.apply'] },
   { label: '事件与交付', permissions: ['events.read', 'delivery.read'] },
 ]
+
+const PERMISSION_LABELS: Record<string, string> = {
+  'scheduler.read': '查看调度', 'project.control': '暂停或恢复项目',
+  'project.read': '查看项目', 'profile.read': '查看执行配置',
+  'issue.create': '创建任务', 'issue.read': '查看任务', 'issue.comment': '追加补充',
+  'issue.cancel': '取消任务', 'issue.retry': '重试任务', 'issue.accept': '验收交付',
+  'issue.rework': '发回返工', 'issue.evaluate': '评价任务',
+  'run.read': '查看执行记录', 'run.message': '发送执行消息', 'question.answer': '回答执行问题',
+  'application.prepare': '准备写入候选', 'application.read': '查看候选', 'application.apply': '确认写入项目',
+  'events.read': '查看事件', 'delivery.read': '查看交付与文件',
+}
 
 export function SettingsPage() {
   const toast = useToast()
@@ -48,11 +59,11 @@ export function SettingsPage() {
         <h2 className="section-title">浏览器会话</h2>
         <dl className="kv">
           <dt>配对状态</dt>
-          <dd>{hasCsrf ? '已配对（Cookie + CSRF 令牌）' : 'Cookie 有效，但此标签页缺少 CSRF 令牌'}</dd>
+          <dd>{hasCsrf ? '已连接，可以操作' : '可以查看数据，需要重新配对才能操作'}</dd>
         </dl>
         {!hasCsrf ? (
           <div className="notice-box" style={{ marginTop: 8 }}>
-            读取数据正常，但写操作需要 CSRF 令牌。若写请求被拒绝，请重新配对。
+            请重新配对此浏览器，恢复创建、保存等操作。
           </div>
         ) : null}
       </section>
@@ -69,7 +80,7 @@ export function SettingsPage() {
           <Field
             label="来源标识"
             htmlFor="requester-ref"
-            hint="创建工单时记录的 requesterRef，用于区分工单来自人类操作员还是外部主 Agent。"
+            hint="创建任务时记下的来源，用来区分是人在操作，还是外部主代理。"
           >
             <input
               id="requester-ref"
@@ -94,7 +105,7 @@ export function SettingsPage() {
         ) : (
           <dl className="kv">
             <dt>就绪状态</dt>
-            <dd>{health.data?.status ?? '未知'}</dd>
+            <dd>{health.data?.status === 'ok' ? '可用' : (health.data?.status ?? '未知')}</dd>
             <dt>运行时版本</dt>
             <dd className="mono">{health.data?.runtimeVersion ?? '服务未上报'}</dd>
           </dl>
@@ -231,7 +242,7 @@ function TokensPanel() {
         访问令牌 <span className="count">{tokens.data?.items.length ?? 0}</span>
       </h2>
       <p className="muted small" style={{ marginTop: 0 }}>
-        供外部 HTTP / MCP 客户端使用的 Bearer 令牌，按项目与权限双重限定范围。
+        让外部工具访问指定项目。选择它可以访问的项目，以及可以执行的操作。
         仅本机浏览器会话可以管理令牌；密钥只在创建时显示一次，服务端不保存明文。
       </p>
 
@@ -265,8 +276,8 @@ function TokensPanel() {
                   </span>
                 ))}
               </div>
-              <div className="row-meta mono" style={{ marginTop: 3 }}>
-                {token.permissions.join(' · ')}
+              <div className="row-meta" style={{ marginTop: 3 }}>
+                {token.permissions.map((permission) => PERMISSION_LABELS[permission] ?? permission).join(' · ')}
               </div>
             </li>
           ))}
@@ -304,7 +315,7 @@ function TokensPanel() {
       <form onSubmit={create}>
         <Field label="项目范围" hint="令牌只能访问选中的项目。">
           {projects.data && projects.data.items.length === 0 ? (
-            <p className="muted small">还没有项目；请先在工单页创建项目。</p>
+            <p className="muted small">还没有项目。请先在任务页创建项目。</p>
           ) : (
             <div className="chips" role="group" aria-label="选择项目范围">
               {(projects.data?.items ?? []).map((project) => (
@@ -333,11 +344,12 @@ function TokensPanel() {
                     <button
                       key={permission}
                       type="button"
-                      className="chip mono"
+                      className="chip"
+                      title={permission}
                       aria-pressed={selectedPermissions.has(permission)}
                       onClick={() => setSelectedPermissions((prev) => toggleIn(prev, permission))}
                     >
-                      {permission}
+                      {PERMISSION_LABELS[permission] ?? permission}
                     </button>
                   ))}
                 </div>

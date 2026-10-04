@@ -9,30 +9,32 @@ interface QueryState<T> {
   refetch: () => void
 }
 
-/** 极简数据获取 hook：真实加载/错误/重试三态，无缓存假象。 */
+/** 同一资源的刷新保留页面；切换资源立即隐藏旧数据。 */
 export function useQuery<T>(fn: () => Promise<T>, deps: readonly unknown[]): QueryState<T> {
-  const [data, setData] = useState<T | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<unknown>(null)
+  const [state, setState] = useState<{ key: readonly unknown[]; data: T | null; loading: boolean; error: unknown }>(
+    () => ({ key: [...deps], data: null, loading: true, error: null }),
+  )
   const [tick, setTick] = useState(0)
   const fnRef = useRef(fn)
   fnRef.current = fn
 
   useEffect(() => {
     let cancelled = false
-    setLoading(true)
-    setError(null)
+    const key = [...deps]
+    const sameKey = (other: readonly unknown[]) => key.length === other.length && key.every((value, index) => Object.is(value, other[index]))
+    setState((previous) => {
+      const data = sameKey(previous.key) ? previous.data : null
+      return { key, data, loading: data === null, error: null }
+    })
     fnRef.current()
       .then((value) => {
         if (!cancelled) {
-          setData(value)
-          setLoading(false)
+          setState({ key, data: value, loading: false, error: null })
         }
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setError(err)
-          setLoading(false)
+          setState((previous) => ({ key, data: sameKey(previous.key) ? previous.data : null, loading: false, error: err }))
         }
       })
     return () => {
@@ -42,7 +44,9 @@ export function useQuery<T>(fn: () => Promise<T>, deps: readonly unknown[]): Que
   }, [...deps, tick])
 
   const refetch = useCallback(() => setTick((t) => t + 1), [])
-  return { data, loading, error, refetch }
+  const current = state.key.length === deps.length && deps.every((value, index) => Object.is(value, state.key[index]))
+  return current ? { data: state.data, loading: state.loading, error: state.error, refetch }
+    : { data: null, loading: true, error: null, refetch }
 }
 
 interface EventStreamState {

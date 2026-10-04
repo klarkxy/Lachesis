@@ -69,7 +69,7 @@ export function ProfileFormDialog({
   const knownEffort = effort === '' || capabilities?.reasoningOptions.some((option) => option.value === effort) === true
   const valid = Boolean(name.trim() && providerRef.trim() && modelId.trim() && knownEffort &&
     (mode !== 'edit' || !profile || profile.harnessId === 'dsh-acp-0.1.7'))
-  const title = mode === 'edit' ? '编辑 Profile' : mode === 'copy' ? '复制 Profile' : '新建 Profile'
+  const title = mode === 'edit' ? '编辑执行配置' : mode === 'copy' ? '复制执行配置' : '新建执行配置'
 
   function changeRoute(field: 'provider' | 'model', value: string) {
     probeSerial.current += 1
@@ -117,11 +117,11 @@ export function ProfileFormDialog({
         mode === 'edit' && profile
           ? await profilesApi.update(profile.id, body, profile.revision)
           : await profilesApi.create(body)
-      toast.notify(mode === 'edit' ? 'Profile 已保存' : 'Profile 已创建')
+      toast.notify(mode === 'edit' ? '执行配置已保存' : '执行配置已创建')
       onSaved(saved)
     } catch (err) {
       if (isConflict(err)) {
-        setError(new Error('此 Profile 已被他处修改。请关闭对话框刷新后重试。'))
+        setError(new Error('这份执行配置已被别处修改。请关闭对话框，刷新后再试。'))
       } else {
         setError(err)
       }
@@ -144,7 +144,7 @@ export function ProfileFormDialog({
             placeholder="例如 白露"
           />
         </Field>
-        <Field label="头像" hint="头像仅用于识别；同一 Profile 的所有实例显示同一头像，不代表能力差异。">
+        <Field label="头像" hint="头像只用来辨认。同一份执行配置的每次执行都用这张头像，不代表能力不同。">
           <div className="avatar-picker" role="group" aria-label="选择头像预设">
             {AVATAR_PRESETS.map((preset) => (
               <button
@@ -248,7 +248,7 @@ export function ProfileFormDialog({
           取消
         </button>
         <button type="submit" form={formId} className="btn btn-primary" disabled={!valid || busy}>
-          {busy ? '正在保存…' : mode === 'edit' ? '保存修改' : '创建 Profile'}
+          {busy ? '正在保存…' : mode === 'edit' ? '保存修改' : '创建执行配置'}
         </button>
       </div>
     </Dialog>

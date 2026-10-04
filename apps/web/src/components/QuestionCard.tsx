@@ -3,6 +3,27 @@ import { runsApi } from '@/api/client'
 import type { PendingQuestion } from '@/api/types'
 import { ErrorBox, JsonDetails } from '@/components/ui'
 
+const PERMISSION_PROMPT = 'Allow this dsh tool action?'
+
+const PERMISSION_OPTION_LABELS: Record<string, string> = {
+  'allow-once': '只允许这一次',
+  allow_once: '只允许这一次',
+  'allow-always': '以后都允许',
+  allow_always: '以后都允许',
+  'reject-once': '拒绝这一次',
+  reject_once: '拒绝这一次',
+  'reject-always': '以后都拒绝',
+  reject_always: '以后都拒绝',
+}
+
+function questionLabel(text: string): string {
+  return text === PERMISSION_PROMPT ? '允许这次 dsh 工具操作？' : text
+}
+
+function optionLabel(option: string): string {
+  return PERMISSION_OPTION_LABELS[option] ?? option
+}
+
 /**
  * 执行实例的待答复提问。仅针对仍处于 pending 的问题渲染表单；
  * 提交 POST /runs/:id/questions/:questionId/answer { answers }。
@@ -16,7 +37,7 @@ export function QuestionCard({
 }) {
   const [values, setValues] = useState<Record<string, string>>({})
   const [freeform, setFreeform] = useState('')
-  const [busy, setBusy] = useState(false)
+  const [phase, setPhase] = useState<'idle' | 'pending' | 'submitted'>('idle')
   const [error, setError] = useState<unknown>(null)
 
   const knownItems = question.questions
@@ -27,8 +48,8 @@ export function QuestionCard({
 
   async function submit(e: FormEvent) {
     e.preventDefault()
-    if (!valid || busy) return
-    setBusy(true)
+    if (!valid || phase !== 'idle') return
+    setPhase('pending')
     setError(null)
     const answers: Record<string, string> =
       knownItems.length > 0
@@ -36,10 +57,11 @@ export function QuestionCard({
         : { response: freeform.trim() }
     try {
       await runsApi.answerQuestion(question.runId, question.id, answers)
+      setPhase('submitted')
       onAnswered()
     } catch (err) {
       setError(err)
-      setBusy(false)
+      setPhase('idle')
     }
   }
 
@@ -49,7 +71,7 @@ export function QuestionCard({
         knownItems.map((item) => (
           <div className="field" key={item.id}>
             <label className="field-label" htmlFor={`q-${question.id}-${item.id}`}>
-              {item.text}
+              {questionLabel(item.text)}
               {item.required ? <span aria-hidden="true">（必填）</span> : null}
             </label>
             {item.options && item.options.length > 0 ? (
@@ -57,12 +79,13 @@ export function QuestionCard({
                 id={`q-${question.id}-${item.id}`}
                 className="select"
                 value={values[item.id] ?? ''}
+                disabled={phase !== 'idle'}
                 onChange={(e) => setValues((prev) => ({ ...prev, [item.id]: e.target.value }))}
               >
                 <option value="">请选择</option>
                 {item.options.map((option) => (
                   <option key={option} value={option}>
-                    {option}
+                    {optionLabel(option)}
                   </option>
                 ))}
               </select>
@@ -72,6 +95,7 @@ export function QuestionCard({
                 className="textarea"
                 rows={2}
                 value={values[item.id] ?? ''}
+                disabled={phase !== 'idle'}
                 onChange={(e) => setValues((prev) => ({ ...prev, [item.id]: e.target.value }))}
               />
             )}
@@ -88,6 +112,7 @@ export function QuestionCard({
               className="textarea"
               rows={2}
               value={freeform}
+              disabled={phase !== 'idle'}
               onChange={(e) => setFreeform(e.target.value)}
             />
           </div>
@@ -95,9 +120,10 @@ export function QuestionCard({
         </>
       )}
       {error ? <ErrorBox error={error} /> : null}
+      {phase === 'submitted' ? <div className="notice-box">答复已提交。任务继续后，这个问题会从这里消失。</div> : null}
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
-        <button type="submit" className="btn btn-primary" disabled={!valid || busy}>
-          {busy ? '正在提交…' : '提交答复'}
+        <button type="submit" className="btn btn-primary" disabled={!valid || phase !== 'idle'}>
+          {phase === 'pending' ? '正在提交…' : phase === 'submitted' ? '已提交' : '提交答复'}
         </button>
       </div>
     </form>

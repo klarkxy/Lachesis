@@ -123,18 +123,19 @@ export function Field({
 export function BrandMark({ size = 30 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true">
-      <rect width="32" height="32" rx="7" fill="#14635B" />
+      <rect width="32" height="32" rx="8" fill="#243140" />
+      <rect x="0.75" y="0.75" width="30.5" height="30.5" rx="7.25" fill="none" stroke="#8EB4D4" />
       <path
         d="M9 22.5c4.5-1 8-3.2 10-6.5 1.4-2.3 2.4-4.8 4-6.5"
         fill="none"
-        stroke="#F5F6F4"
+        stroke="#E7F2FA"
         strokeWidth="2"
         strokeLinecap="round"
       />
-      <circle cx="9" cy="22.5" r="2.6" fill="#F5F6F4" />
+      <circle cx="9" cy="22.5" r="2.6" fill="#E7F2FA" />
       <path
         d="M13.2 20.9l1.6 1.4M17.2 17.6l1.6 1.4M20.6 13.4l1.6 1.4"
-        stroke="#9FC4BC"
+        stroke="#8EB4D4"
         strokeWidth="1.4"
         strokeLinecap="round"
       />

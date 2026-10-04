@@ -1,51 +1,74 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { issuesApi, newIdempotencyKey, projectsApi, profilesApi } from '@/api/client'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { LayoutGrid, List, Plus, Search } from 'lucide-react'
+import { issuesApi, newIdempotencyKey, profilesApi, projectsApi } from '@/api/client'
 import { useQuery } from '@/api/hooks'
 import { getRequesterRef } from '@/api/session'
-import type { CreateProjectInput, Issue, Profile, Project, WorkspaceKind } from '@/api/types'
+import type { CreateProjectInput, Issue, IssueListItem, Profile, Project, WorkspaceKind } from '@/api/types'
 import { Avatar } from '@/components/Avatar'
 import { Dialog } from '@/components/Dialog'
 import { PlanFields, lines } from '@/components/PlanFields'
+import { useProjectCatalog } from '@/components/ProjectCatalog'
 import { useToast } from '@/components/Toast'
 import { Dot, EmptyState, ErrorBox, Field, LoadingBlock, StatusPill } from '@/components/ui'
-import { issueStatusMeta } from '@/lib/status'
+import { BOARD_COLUMNS, columnForStatus } from '@/lib/board'
+import { issueBoardMeta } from '@/lib/status'
 import { timeAgo } from '@/lib/time'
+import { useProjectTasks } from '@/lib/useProjectTasks'
 
 const STATUS_FILTERS = [
   { value: '', label: '全部' },
-  { value: 'queued', label: '排队中' },
+  { value: 'queued', label: '排队等待' },
+  { value: 'blocked', label: '等待依赖' },
+  { value: 'starting', label: '正在启动' },
   { value: 'running', label: '执行中' },
-  { value: 'needs_input', label: '等待输入' },
+  { value: 'needs_input', label: '需要回答' },
   { value: 'awaiting_review', label: '待验收' },
   { value: 'accepted', label: '已验收' },
-  { value: 'failed', label: '失败' },
-  { value: 'recovery_required', label: '待恢复' },
+  { value: 'failed', label: '执行失败' },
+  { value: 'recovery_required', label: '需要恢复' },
   { value: 'cancelled', label: '已取消' },
 ] as const
 
 export function IssuesPage() {
-  const toast = useToast()
-  const projectsQuery = useQuery(() => projectsApi.list(), [])
-  const profilesQuery = useQuery(() => profilesApi.list(), [])
+  const [params] = useSearchParams()
+  const project = params.get('project') ?? ''
+  const status = params.get('view') === 'list' ? (params.get('status') ?? '') : ''
+  return <IssuesWorkspace key={JSON.stringify([project, status])} />
+}
 
-  const [projectId, setProjectId] = useState('')
-  const [status, setStatus] = useState('')
-  const [search, setSearch] = useState('')
-  const [issues, setIssues] = useState<Issue[] | null>(null)
+function IssuesWorkspace() {
+  const toast = useToast()
+  const catalog = useProjectCatalog()
+  const profilesQuery = useQuery(() => profilesApi.list(), [])
+  const [params, setParams] = useSearchParams()
+  const projectId = params.get('project') ?? ''
+  const view = params.get('view') === 'list' ? 'list' : 'board'
+  const search = params.get('q') ?? ''
+  const status = view === 'list' ? (params.get('status') ?? '') : ''
+
+  const [issues, setIssues] = useState<IssueListItem[] | null>(null)
   const [nextCursor, setNextCursor] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<unknown>(null)
-
   const [createOpen, setCreateOpen] = useState(false)
   const [projectsOpen, setProjectsOpen] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
+  const requestId = useRef(0)
   const navigate = useNavigate()
+
+  function setParam(key: string, value: string) {
+    const next = new URLSearchParams(params)
+    if (value) next.set(key, value)
+    else next.delete(key)
+    setParams(next, { replace: true })
+  }
 
   async function load(cursor?: string | null) {
     const append = cursor != null
+    const token = append ? requestId.current : ++requestId.current
     if (append) setLoadingMore(true)
     else {
       setLoading(true)
@@ -57,13 +80,17 @@ export function IssuesPage() {
         status: status || undefined,
         cursor: cursor ?? null,
       })
+      if (token !== requestId.current) return
       setIssues((prev) => (append && prev ? [...prev, ...page.items] : page.items))
       setNextCursor(page.nextCursor)
     } catch (err) {
+      if (token !== requestId.current) return
       setError(err)
     } finally {
-      setLoading(false)
-      setLoadingMore(false)
+      if (token === requestId.current) {
+        setLoading(false)
+        setLoadingMore(false)
+      }
     }
   }
 
@@ -72,25 +99,24 @@ export function IssuesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, status])
 
-  // 键盘：/ 聚焦搜索，n 新建工单，↑/↓ 在列表行间移动
   useEffect(() => {
-    function onKey(e: globalThis.KeyboardEvent) {
-      const target = e.target as HTMLElement | null
+    function onKey(event: globalThis.KeyboardEvent) {
+      const target = event.target as HTMLElement | null
       const typing = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)
       if (typing) return
-      if (e.key === '/') {
-        e.preventDefault()
+      if (event.key === '/') {
+        event.preventDefault()
         searchRef.current?.focus()
-      } else if (e.key === 'n') {
-        e.preventDefault()
+      } else if (event.key === 'n' && catalog.projects.length > 0) {
+        event.preventDefault()
         setCreateOpen(true)
-      } else if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && listRef.current) {
-        const links = Array.from(listRef.current.querySelectorAll<HTMLElement>('a.row'))
+      } else if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && listRef.current) {
+        const links = Array.from(listRef.current.querySelectorAll<HTMLElement>('a.task-card, a.row'))
         if (links.length === 0) return
         const index = links.findIndex((el) => el === document.activeElement)
-        e.preventDefault()
+        event.preventDefault()
         const nextIndex =
-          e.key === 'ArrowDown'
+          event.key === 'ArrowDown'
             ? index < 0
               ? 0
               : Math.min(index + 1, links.length - 1)
@@ -102,185 +128,201 @@ export function IssuesPage() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  }, [catalog.projects.length])
 
   const profilesById = useMemo(() => {
     const map = new Map<string, Profile>()
-    for (const p of profilesQuery.data?.items ?? []) map.set(p.id, p)
+    for (const profile of profilesQuery.data?.items ?? []) map.set(profile.id, profile)
     return map
   }, [profilesQuery.data])
 
   const projectsById = useMemo(() => {
     const map = new Map<string, Project>()
-    for (const p of projectsQuery.data?.items ?? []) map.set(p.id, p)
+    for (const project of catalog.projects) map.set(project.id, project)
     return map
-  }, [projectsQuery.data])
+  }, [catalog.projects])
 
   const visible = useMemo(() => {
     if (!issues) return null
-    const q = search.trim().toLowerCase()
-    if (!q) return issues
-    return issues.filter((issue) => issue.title.toLowerCase().includes(q) || issue.id.toLowerCase().includes(q))
+    const query = search.trim().toLowerCase()
+    if (!query) return issues
+    return issues.filter((issue) => issue.title.toLowerCase().includes(query) || issue.id.toLowerCase().includes(query))
   }, [issues, search])
 
-  const projects = projectsQuery.data?.items ?? []
-  const noProjects = !projectsQuery.loading && projects.length === 0
+  const grouped = useMemo(() => {
+    const buckets = new Map<string, IssueListItem[]>()
+    for (const column of BOARD_COLUMNS) buckets.set(column.id, [])
+    for (const issue of visible ?? []) {
+      const bucket = buckets.get(columnForStatus(issue.status))
+      bucket?.push(issue)
+    }
+    for (const items of buckets.values()) items.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))
+    return buckets
+  }, [visible])
+
+  const projects = catalog.projects
+  const noProjects = !catalog.loading && projects.length === 0
+  const currentProject = projectId ? projectsById.get(projectId) : undefined
+
+  function taskLink(issue: { id: string }) {
+    const next = new URLSearchParams()
+    if (projectId) next.set('project', projectId)
+    if (view === 'list') next.set('view', 'list')
+    const searchText = next.toString()
+    return `/issues/${encodeURIComponent(issue.id)}${searchText ? `?${searchText}` : ''}`
+  }
 
   return (
-    <div className="page">
-      <div className="page-head">
-        <div>
-          <h1 className="page-title">工单</h1>
-          <div className="page-desc">按项目查看与创建工单，进入详情执行验收与评价。</div>
-        </div>
-        <div className="head-actions">
-          <button type="button" className="btn" onClick={() => setProjectsOpen(true)}>
-            管理项目
+    <div className="board-screen">
+      <div className="command">
+        <span className="command-title">{currentProject ? currentProject.name : '任务'}</span>
+        <span className="seg" role="group" aria-label="查看方式">
+          <button type="button" aria-pressed={view === 'board'} onClick={() => setParam('view', '')}>
+            <LayoutGrid size={15} strokeWidth={1.75} aria-hidden="true" />
+            看板
           </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => setCreateOpen(true)}
-            disabled={noProjects}
-            title={noProjects ? '请先创建项目' : undefined}
-          >
-            新建工单
+          <button type="button" aria-pressed={view === 'list'} onClick={() => setParam('view', 'list')}>
+            <List size={15} strokeWidth={1.75} aria-hidden="true" />
+            列表
           </button>
-        </div>
+        </span>
+        <span style={{ position: 'relative', flex: '1 1 220px', maxWidth: 360, display: 'flex' }}>
+          <Search size={15} strokeWidth={1.75} aria-hidden="true" style={{ position: 'absolute', left: 10, top: 10, color: 'var(--ink-3)' }} />
+          <input
+            ref={searchRef}
+            className="input search"
+            style={{ paddingLeft: 30 }}
+            type="search"
+            placeholder="搜索标题或编号（/）"
+            value={search}
+            onChange={(event) => setParam('q', event.target.value)}
+            aria-label="搜索任务"
+          />
+        </span>
+        <span className="spacer" />
+        <button type="button" className="btn" onClick={() => setProjectsOpen(true)}>
+          管理项目
+        </button>
+        <button type="button" className="btn btn-primary" onClick={() => setCreateOpen(true)} disabled={noProjects} title={noProjects ? '请先创建项目' : '新建任务（n）'}>
+          <Plus size={15} strokeWidth={1.75} aria-hidden="true" />
+          新建任务
+        </button>
       </div>
 
-      {projectsQuery.error ? <ErrorBox error={projectsQuery.error} onRetry={projectsQuery.refetch} /> : null}
-
-      {noProjects ? (
-        <EmptyState
-          title="还没有项目"
-          hint="工单归属于项目。先创建一个项目，再向其中提交工单。"
-          action={
-            <button type="button" className="btn btn-primary" onClick={() => setProjectsOpen(true)}>
-              创建项目
-            </button>
-          }
-        />
-      ) : (
-        <>
-          <div className="toolbar" role="search">
-            <select
-              className="select"
-              style={{ width: 200 }}
-              value={projectId}
-              onChange={(e) => setProjectId(e.target.value)}
-              aria-label="按项目筛选"
-            >
-              <option value="">全部项目</option>
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-            <input
-              ref={searchRef}
-              className="input search"
-              type="search"
-              placeholder="搜索标题或工单号（/）"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              aria-label="搜索工单"
-            />
-            <span className="spacer" />
-          </div>
-          <div className="chips" style={{ marginBottom: 12 }} role="group" aria-label="按状态筛选">
-            {STATUS_FILTERS.map((s) => (
-              <button
-                key={s.value}
-                type="button"
-                className="chip"
-                aria-pressed={status === s.value}
-                onClick={() => setStatus(s.value)}
-              >
-                {s.label}
+      <div className="board-scroll" ref={listRef}>
+        {catalog.error ? <ErrorBox error={catalog.error} onRetry={catalog.refetch} /> : null}
+        {noProjects ? (
+          <EmptyState
+            title="还没有项目"
+            hint="任务属于一个项目。Git 仓库和普通目录都可以。先创建项目，再新建任务。"
+            action={
+              <button type="button" className="btn btn-primary" onClick={() => setProjectsOpen(true)}>
+                创建项目
               </button>
-            ))}
-          </div>
-
-          {error ? <ErrorBox error={error} onRetry={() => void load()} /> : null}
-          {loading ? (
-            <LoadingBlock label="正在加载工单…" />
-          ) : visible && visible.length > 0 ? (
-            <>
-              <div className="rows" ref={listRef}>
-                {visible.map((issue) => {
-                  const meta = issueStatusMeta(issue.status)
-                  const profile = issue.dispatch.profileId ? profilesById.get(issue.dispatch.profileId) : undefined
-                  const project = projectsById.get(issue.projectId)
-                  return (
-                    <Link key={issue.id} className="row" to={`/issues/${encodeURIComponent(issue.id)}`}>
-                      <Dot color={meta.color} />
-                      <div className="row-main">
-                        <div className="row-title">
-                          <span className="t">{issue.title}</span>
-                        </div>
-                        <div className="row-meta">
-                          {project ? <span>{project.name}</span> : null}
-                          {profile ? (
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                              <Avatar presetId={profile.avatarPresetId} size={20} label={profile.name} />
-                              {profile.name}
-                            </span>
-                          ) : (
-                            <span>自动分配</span>
-                          )}
-                          <span className="mono" title={issue.id}>
-                            {issue.id.slice(0, 8)}
-                          </span>
-                          <span>更新于 {timeAgo(issue.updatedAt)}</span>
-                        </div>
-                      </div>
-                      <div className="row-aside">
-                        <StatusPill label={meta.label} color={meta.color} />
-                      </div>
-                    </Link>
-                  )
-                })}
+            }
+          />
+        ) : (
+          <>
+            {view === 'list' ? (
+              <div className="chips" style={{ marginBottom: 12 }} role="group" aria-label="按状态筛选">
+                {STATUS_FILTERS.map((item) => (
+                  <button key={item.value} type="button" className="chip" aria-pressed={status === item.value} onClick={() => setParam('status', item.value)}>
+                    {item.label}
+                  </button>
+                ))}
               </div>
-              {nextCursor ? (
-                <div style={{ marginTop: 12, textAlign: 'center' }}>
-                  <button type="button" className="btn" onClick={() => void load(nextCursor)} disabled={loadingMore}>
-                    {loadingMore ? '正在加载…' : '加载更多'}
-                  </button>
+            ) : null}
+            {error ? <ErrorBox error={error} onRetry={() => void load()} /> : null}
+            {loading ? (
+              <LoadingBlock label="正在加载任务…" />
+            ) : visible && visible.length > 0 ? (
+              view === 'board' ? (
+                <div className="board">
+                  {BOARD_COLUMNS.map((column) => {
+                    const items = grouped.get(column.id) ?? []
+                    const latest = items[0]
+                    return (
+                      <section key={column.id} className="board-col" aria-label={column.label}>
+                        <div className="board-col-head">
+                          <div className="board-col-title">
+                            <span>{column.label}</span>
+                            <span className="col-count">{items.length}</span>
+                          </div>
+                          <div className="board-col-hint">
+                            {column.hint}
+                            {latest ? ` · 最近 ${timeAgo(latest.updatedAt)}` : ''}
+                          </div>
+                        </div>
+                        {items.map((issue) => (
+                          <TaskCard key={issue.id} issue={issue} profile={issue.dispatch.profileId ? profilesById.get(issue.dispatch.profileId) : undefined} project={projectId ? undefined : projectsById.get(issue.projectId)} to={taskLink(issue)} />
+                        ))}
+                      </section>
+                    )
+                  })}
                 </div>
-              ) : null}
-            </>
-          ) : (
-            <EmptyState
-              title={search || status ? '没有符合条件的工单' : '还没有工单'}
-              hint={
-                search || status
-                  ? '调整筛选条件或清空搜索后重试。'
-                  : '创建第一张工单，指定验收标准与执行 Profile。'
-              }
-              action={
-                search || status ? (
-                  <button
-                    type="button"
-                    className="btn"
-                    onClick={() => {
-                      setSearch('')
-                      setStatus('')
-                    }}
-                  >
-                    清空筛选
-                  </button>
-                ) : (
-                  <button type="button" className="btn btn-primary" onClick={() => setCreateOpen(true)}>
-                    新建工单
-                  </button>
-                )
-              }
-            />
-          )}
-        </>
-      )}
+              ) : (
+                <div className="rows">
+                  {visible.map((issue) => {
+                    const meta = issueBoardMeta(issue)
+                    const profile = issue.dispatch.profileId ? profilesById.get(issue.dispatch.profileId) : undefined
+                    const project = projectsById.get(issue.projectId)
+                    return (
+                      <Link key={issue.id} className="row" to={taskLink(issue)}>
+                        <Dot color={meta.color} />
+                        <div className="row-main">
+                          <div className="row-title">
+                            <span className="t">{issue.title}</span>
+                          </div>
+                          <div className="row-meta">
+                            {project ? <span>{project.name}</span> : null}
+                            <Owner profile={profile} />
+                            <span>更新于 {timeAgo(issue.updatedAt)}</span>
+                          </div>
+                        </div>
+                        <div className="row-aside">
+                          <StatusPill label={meta.label} color={meta.color} />
+                        </div>
+                      </Link>
+                    )
+                  })}
+                </div>
+              )
+            ) : (
+              <EmptyState
+                title={search || status ? '没有符合条件的任务' : '还没有任务'}
+                hint={search || status ? '换一个条件，或清空搜索。' : '新建一张任务，写清要完成的事和怎样算做完。'}
+                action={
+                  search || status ? (
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => {
+                        const next = new URLSearchParams(params)
+                        next.delete('q')
+                        next.delete('status')
+                        setParams(next, { replace: true })
+                      }}
+                    >
+                      清空筛选
+                    </button>
+                  ) : (
+                    <button type="button" className="btn btn-primary" onClick={() => setCreateOpen(true)}>
+                      新建任务
+                    </button>
+                  )
+                }
+              />
+            )}
+            {nextCursor && !loading ? (
+              <div className="load-more">
+                <button type="button" className="btn" onClick={() => void load(nextCursor)} disabled={loadingMore}>
+                  {loadingMore ? '正在加载…' : '加载更多任务'}
+                </button>
+              </div>
+            ) : null}
+          </>
+        )}
+      </div>
 
       <CreateIssueDialog
         open={createOpen}
@@ -290,21 +332,44 @@ export function IssuesPage() {
         defaultProjectId={projectId}
         onCreated={(issue) => {
           setCreateOpen(false)
-          toast.notify('工单已创建')
-          navigate(`/issues/${encodeURIComponent(issue.id)}`)
+          toast.notify('任务已创建')
+          navigate(taskLink(issue))
         }}
       />
       <ProjectsDialog
         open={projectsOpen}
         onClose={() => setProjectsOpen(false)}
         projects={projects}
-        onChanged={() => projectsQuery.refetch()}
+        onChanged={() => catalog.refetch()}
       />
     </div>
   )
 }
 
-// ---------- 新建工单 ----------
+function Owner({ profile }: { profile: Profile | undefined }) {
+  if (!profile) return <span>自动分配</span>
+  return (
+    <span className="task-owner">
+      <Avatar presetId={profile.avatarPresetId} size={18} label={profile.name} />
+      <span>{profile.name}</span>
+    </span>
+  )
+}
+
+function TaskCard({ issue, profile, project, to }: { issue: IssueListItem; profile: Profile | undefined; project: Project | undefined; to: string }) {
+  const meta = issueBoardMeta(issue)
+  return (
+    <Link className="task-card" to={to}>
+      <div className="task-card-title">{issue.title}</div>
+      <StatusPill label={meta.label} color={meta.color} />
+      <div className="task-card-meta">
+        <Owner profile={profile} />
+        <span>{timeAgo(issue.updatedAt)}</span>
+      </div>
+      {project ? <div className="muted small">{project.name}</div> : null}
+    </Link>
+  )
+}
 
 function CreateIssueDialog({
   open,
@@ -335,8 +400,8 @@ function CreateIssueDialog({
   const [isolationRequirement, setIsolationRequirement] = useState<'trusted-host' | 'full'>('trusted-host')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<unknown>(null)
-  // 幂等键在表单打开时生成：同一次提交的重试复用同一键，不会生成重复工单
   const [idemKey, setIdemKey] = useState('')
+  const related = useProjectTasks(open ? projectId : '')
 
   useEffect(() => {
     if (open) {
@@ -357,12 +422,11 @@ function CreateIssueDialog({
     }
   }, [open, defaultProjectId, projects])
 
-  const enabledProfiles = profiles.filter((p) => !p.disabled)
-  const valid =
-    projectId && title.trim() && description.trim() && (mode === 'auto' || profileId)
+  const enabledProfiles = profiles.filter((profile) => !profile.disabled)
+  const valid = projectId && title.trim() && description.trim() && (mode === 'auto' || profileId)
 
-  async function submit(e: FormEvent) {
-    e.preventDefault()
+  async function submit(event: FormEvent) {
+    event.preventDefault()
     if (!valid || busy) return
     setBusy(true)
     setError(null)
@@ -372,10 +436,7 @@ function CreateIssueDialog({
           projectId,
           title: title.trim(),
           description: description.trim(),
-          acceptanceCriteria: criteria
-            .split('\n')
-            .map((line) => line.trim())
-            .filter(Boolean),
+          acceptanceCriteria: criteria.split('\n').map((line) => line.trim()).filter(Boolean),
           dispatch: mode === 'require' ? { mode: 'require', profileId } : { mode: 'auto', profileId: null },
           dependsOn: lines(dependsOn),
           ownedPaths: lines(ownedPaths),
@@ -396,95 +457,68 @@ function CreateIssueDialog({
   }
 
   return (
-    <Dialog open={open} onClose={onClose} title="新建工单" busy={busy}>
+    <Dialog open={open} onClose={onClose} title="新建任务" busy={busy}>
       <form onSubmit={submit} id="create-issue-form">
         <Field label="所属项目" htmlFor="ci-project">
-          <select
-            id="ci-project"
-            className="select"
-            value={projectId}
-            onChange={(e) => setProjectId(e.target.value)}
-            required
-          >
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
+          <select id="ci-project" className="select" value={projectId} onChange={(event) => setProjectId(event.target.value)} required>
+            {projects.map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.name}
               </option>
             ))}
           </select>
         </Field>
         <Field label="标题" htmlFor="ci-title">
-          <input
-            id="ci-title"
-            className="input"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            required
-            maxLength={200}
-            placeholder="一句话说明要完成什么"
-          />
+          <input id="ci-title" className="input" value={title} onChange={(event) => setTitle(event.target.value)} required maxLength={200} placeholder="一句话说明要完成什么" />
         </Field>
-        <Field label="任务描述" htmlFor="ci-desc" hint="目标、输入与约束。描述越明确，交付越可验收。">
-          <textarea
-            id="ci-desc"
-            className="textarea"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            required
-            rows={5}
-          />
+        <Field label="要做什么" htmlFor="ci-desc" hint="写清目标、已知输入和限制。越具体，越容易验收。">
+          <textarea id="ci-desc" className="textarea" value={description} onChange={(event) => setDescription(event.target.value)} required rows={5} />
         </Field>
-        <Field label="验收标准" htmlFor="ci-criteria" hint="每行一条；留空表示无显式标准。">
-          <textarea
-            id="ci-criteria"
-            className="textarea"
-            value={criteria}
-            onChange={(e) => setCriteria(e.target.value)}
-            rows={3}
-            placeholder={'能复现原问题\n回归测试通过'}
-          />
+        <Field label="怎样算做完" htmlFor="ci-criteria" hint="每行一条。留空表示没有单独列出的标准。">
+          <textarea id="ci-criteria" className="textarea" value={criteria} onChange={(event) => setCriteria(event.target.value)} rows={3} placeholder={'能复现原来的问题\n回归测试通过'} />
         </Field>
-        <Field label="执行方式" htmlFor="ci-mode">
-          <select
-            id="ci-mode"
-            className="select"
-            value={mode}
-            onChange={(e) => setMode(e.target.value as 'require' | 'auto')}
-          >
-            <option value="auto">自动分配（由服务策略选择 Profile）</option>
-            <option value="require">指定 Profile（必须使用所选配置）</option>
+        <Field label="谁来执行" htmlFor="ci-mode">
+          <select id="ci-mode" className="select" value={mode} onChange={(event) => setMode(event.target.value as 'require' | 'auto')}>
+            <option value="auto">自动分配（由调度选择执行配置）</option>
+            <option value="require">指定执行配置</option>
           </select>
         </Field>
         {mode === 'require' ? (
-          <Field label="指定 Profile" htmlFor="ci-profile">
+          <Field label="执行配置" htmlFor="ci-profile">
             {enabledProfiles.length === 0 ? (
-              <div className="notice-box">
-                没有可用的 Profile。请先在 Profile 页创建后再指定，或改用自动分配。
-              </div>
+              <div className="notice-box">还没有可用的执行配置。先去创建一个，或改成自动分配。</div>
             ) : (
-              <select
-                id="ci-profile"
-                className="select"
-                value={profileId}
-                onChange={(e) => setProfileId(e.target.value)}
-                required
-              >
+              <select id="ci-profile" className="select" value={profileId} onChange={(event) => setProfileId(event.target.value)} required>
                 <option value="" disabled>
-                  选择 Profile
+                  选择执行配置
                 </option>
-                {enabledProfiles.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}（{p.providerRef} / {p.modelId}）
+                {enabledProfiles.map((profile) => (
+                  <option key={profile.id} value={profile.id}>
+                    {profile.name}（{profile.providerRef} / {profile.modelId}）
                   </option>
                 ))}
               </select>
             )}
           </Field>
         ) : null}
-        <PlanFields prefix="ci" dependsOn={dependsOn} ownedPaths={ownedPaths} readOnlyPaths={readOnlyPaths}
-          accessMode={accessMode} attendance={attendance} isolationRequirement={isolationRequirement}
-          onDependsOn={setDependsOn} onOwnedPaths={setOwnedPaths} onReadOnlyPaths={setReadOnlyPaths}
-          onAccessMode={setAccessMode} onAttendance={setAttendance} onIsolationRequirement={setIsolationRequirement} />
+        <PlanFields
+          prefix="ci"
+          dependsOn={dependsOn}
+          ownedPaths={ownedPaths}
+          readOnlyPaths={readOnlyPaths}
+          accessMode={accessMode}
+          attendance={attendance}
+          isolationRequirement={isolationRequirement}
+          onDependsOn={setDependsOn}
+          onOwnedPaths={setOwnedPaths}
+          onReadOnlyPaths={setReadOnlyPaths}
+          onAccessMode={setAccessMode}
+          onAttendance={setAttendance}
+          onIsolationRequirement={setIsolationRequirement}
+          projectTasks={related.tasks.map((task) => ({ id: task.id, title: task.title }))}
+          tasksLoading={related.loading}
+          tasksFailed={related.failed}
+        />
         {error ? <ErrorBox error={error} /> : null}
       </form>
       <div className="dialog-foot" style={{ margin: '0 -18px -16px', paddingTop: 12 }}>
@@ -492,14 +526,12 @@ function CreateIssueDialog({
           取消
         </button>
         <button type="submit" form="create-issue-form" className="btn btn-primary" disabled={!valid || busy}>
-          {busy ? '正在创建…' : '创建工单'}
+          {busy ? '正在创建…' : '创建任务'}
         </button>
       </div>
     </Dialog>
   )
 }
-
-// ---------- 项目管理 ----------
 
 function ProjectsDialog({
   open,
@@ -521,16 +553,12 @@ function ProjectsDialog({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<unknown>(null)
 
-  async function submit(e: FormEvent) {
-    e.preventDefault()
+  async function submit(event: FormEvent) {
+    event.preventDefault()
     if (!name.trim() || !rootPath.trim() || busy) return
     setBusy(true)
     setError(null)
-    const input: CreateProjectInput = {
-      name: name.trim(),
-      kind,
-      rootPath: rootPath.trim(),
-    }
+    const input: CreateProjectInput = { name: name.trim(), kind, rootPath: rootPath.trim() }
     if (kind === 'git' && targetBranch.trim()) input.targetBranch = targetBranch.trim()
     if (verifyCmd.trim()) input.verificationCommand = verifyCmd.trim()
     try {
@@ -551,53 +579,46 @@ function ProjectsDialog({
   return (
     <Dialog open={open} onClose={onClose} title="项目" busy={busy}>
       {projects.length === 0 ? (
-        <p className="muted small">还没有项目。在下方创建第一个项目。</p>
+        <p className="muted small">还没有项目。在下面创建第一个。</p>
       ) : (
         <ul className="list-plain" aria-label="项目列表">
-          {projects.map((p) => (
-            <li key={p.id}>
+          {projects.map((project) => (
+            <li key={project.id}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
-                <strong>{p.name}</strong>
-                <span className="muted mono">{p.kind === 'git' ? 'Git 工作区' : '文件工作区'}</span>
+                <strong>{project.name}</strong>
+                <span className="muted">{project.kind === 'git' ? 'Git 仓库' : '普通目录'}</span>
               </div>
               <div className="muted mono" style={{ overflowWrap: 'anywhere' }}>
-                {p.rootPath}
+                {project.rootPath}
               </div>
             </li>
           ))}
         </ul>
       )}
       <hr className="divider" />
-      <h2 className="section-title" style={{ fontSize: 13.5 }}>
+      <h2 className="section-title" style={{ fontSize: 15 }}>
         新建项目
       </h2>
       <form onSubmit={submit} id="create-project-form">
         <Field label="名称" htmlFor="cp-name">
-          <input id="cp-name" className="input" value={name} onChange={(e) => setName(e.target.value)} required />
+          <input id="cp-name" className="input" value={name} onChange={(event) => setName(event.target.value)} required />
         </Field>
-        <Field label="工作区类型" htmlFor="cp-kind">
-          <select id="cp-kind" className="select" value={kind} onChange={(e) => setKind(e.target.value as WorkspaceKind)}>
-            <option value="git">Git 工作区</option>
-            <option value="files">文件工作区</option>
+        <Field label="项目类型" htmlFor="cp-kind">
+          <select id="cp-kind" className="select" value={kind} onChange={(event) => setKind(event.target.value as WorkspaceKind)}>
+            <option value="git">Git 仓库</option>
+            <option value="files">普通目录</option>
           </select>
         </Field>
-        <Field label="工作区路径" htmlFor="cp-root" hint="服务端本机路径，仅服务端使用，不作为授权凭据。">
-          <input
-            id="cp-root"
-            className="input mono"
-            value={rootPath}
-            onChange={(e) => setRootPath(e.target.value)}
-            required
-            placeholder="例如 C:\\work\\my-repo"
-          />
+        <Field label="本机路径" htmlFor="cp-root" hint="这是服务所在电脑上的路径，只供服务使用。">
+          <input id="cp-root" className="input mono" value={rootPath} onChange={(event) => setRootPath(event.target.value)} required placeholder="例如 C:\\work\\my-repo" />
         </Field>
         {kind === 'git' ? (
           <Field label="目标分支（可选）" htmlFor="cp-branch">
-            <input id="cp-branch" className="input mono" value={targetBranch} onChange={(e) => setTargetBranch(e.target.value)} placeholder="main" />
+            <input id="cp-branch" className="input mono" value={targetBranch} onChange={(event) => setTargetBranch(event.target.value)} placeholder="main" />
           </Field>
         ) : null}
-        <Field label="验证命令（可选）" htmlFor="cp-verify" hint="集成候选和显式应用时执行，例如测试脚本。">
-          <input id="cp-verify" className="input mono" value={verifyCmd} onChange={(e) => setVerifyCmd(e.target.value)} placeholder="npm test" />
+        <Field label="验证命令（可选）" htmlFor="cp-verify" hint="准备候选和确认写入时会执行，例如测试脚本。">
+          <input id="cp-verify" className="input mono" value={verifyCmd} onChange={(event) => setVerifyCmd(event.target.value)} placeholder="npm test" />
         </Field>
         {error ? <ErrorBox error={error} /> : null}
       </form>

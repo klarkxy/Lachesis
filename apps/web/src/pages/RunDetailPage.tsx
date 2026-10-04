@@ -4,6 +4,7 @@ import { issuesApi, profilesApi, runsApi } from '@/api/client'
 import { useEventStream, useNow, useQuery } from '@/api/hooks'
 import type { IssueEvent } from '@/api/types'
 import { Avatar } from '@/components/Avatar'
+import { EventLine } from '@/components/EventLine'
 import { QuestionCard } from '@/components/QuestionCard'
 import {
   Dot,
@@ -15,7 +16,7 @@ import {
   StatusPill,
 } from '@/components/ui'
 import { issueStatusMeta, runStatusMeta } from '@/lib/status'
-import { formatClock, formatDateTime, formatDuration } from '@/lib/time'
+import { formatDateTime, formatDuration } from '@/lib/time'
 
 const ACTIVE_RUN = new Set(['starting', 'running', 'needs_input', 'cancelling'])
 
@@ -57,7 +58,7 @@ export function RunDetailPage() {
       </div>
     )
   }
-  if (runQuery.error || !runQuery.data || !run) {
+  if (!runQuery.data || !run) {
     return (
       <div className="page">
         <ErrorBox error={runQuery.error ?? new Error('实例不存在')} onRetry={runQuery.refetch} />
@@ -72,12 +73,13 @@ export function RunDetailPage() {
 
   return (
     <div className="page">
+      {runQuery.error ? <ErrorBox error={runQuery.error} onRetry={runQuery.refetch} /> : null}
       <div className="page-head">
         <div style={{ minWidth: 0 }}>
           <div className="meta-line" style={{ marginTop: 0, marginBottom: 4 }}>
-            {issue ? <Link to={`/issues/${encodeURIComponent(issue.id)}`}>工单</Link> : <span>工单</span>}
+            {issue ? <Link to={`/issues/${encodeURIComponent(issue.id)}`}>任务</Link> : <span>任务</span>}
             <span aria-hidden="true">/</span>
-            <span>执行实例</span>
+            <span>这次执行</span>
             <IdTag value={run.id} />
           </div>
           <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -98,7 +100,7 @@ export function RunDetailPage() {
             {issue ? (
               <Link to={`/issues/${encodeURIComponent(issue.id)}`}>{issue.title}</Link>
             ) : (
-              <IdTag value={run.issueId} title="工单" />
+              <IdTag value={run.issueId} title="任务编号" />
             )}
             {duration ? <span>已运行 {duration}</span> : null}
           </div>
@@ -106,7 +108,7 @@ export function RunDetailPage() {
         <div className="head-actions">
           {issue ? (
             <Link className="btn" to={`/issues/${encodeURIComponent(issue.id)}`}>
-              返回工单
+              返回任务
             </Link>
           ) : null}
         </div>
@@ -149,23 +151,18 @@ export function RunDetailPage() {
               <dd>{run.startedAt ? formatDateTime(run.startedAt) : '尚未开始'}</dd>
               <dt>结束时间</dt>
               <dd>{run.endedAt ? formatDateTime(run.endedAt) : active ? '进行中' : '未记录'}</dd>
-              {run.sessionId ? (
-                <>
-                  <dt>会话</dt>
-                  <dd className="mono">{run.sessionId}</dd>
-                </>
-              ) : null}
-              {run.baseRef ? (
-                <>
-                  <dt>基线引用</dt>
-                  <dd className="mono">{run.baseRef}</dd>
-                </>
-              ) : null}
-              <dt>工作区</dt>
-              <dd className="mono" style={{ overflowWrap: 'anywhere' }}>
-                {run.workspacePath}
-              </dd>
             </dl>
+            <details className="fold">
+              <summary>编号、基线和工作目录</summary>
+              <dl className="kv">
+                <dt>执行编号</dt>
+                <dd><IdTag value={run.id} /></dd>
+                {run.sessionId ? (<><dt>会话</dt><dd className="mono">{run.sessionId}</dd></>) : null}
+                {run.baseRef ? (<><dt>基线</dt><dd className="mono">{run.baseRef}</dd></>) : null}
+                <dt>工作目录</dt>
+                <dd className="mono" style={{ overflowWrap: 'anywhere' }}>{run.workspacePath}</dd>
+              </dl>
+            </details>
             {run.executionSnapshot ? (
               <>
                 <hr className="divider" />
@@ -173,7 +170,7 @@ export function RunDetailPage() {
                   执行配置快照
                 </h3>
                 <dl className="kv">
-                  <dt>Harness</dt>
+                  <dt>执行器</dt>
                   <dd className="mono">{run.executionSnapshot.harnessId}</dd>
                   <dt>访问模式</dt>
                   <dd>
@@ -183,7 +180,7 @@ export function RunDetailPage() {
                       '读写项目'
                     )}
                   </dd>
-                  <dt>执行模式</dt>
+                  <dt>值守</dt>
                   <dd>{run.executionSnapshot.attendance === 'manual' ? '人工值守' : '有界无人值守'}</dd>
                   <dt>隔离要求</dt>
                   <dd>{run.executionSnapshot.isolationRequirement === 'trusted-host' ? '受信主机' : '完整隔离'}</dd>
@@ -198,9 +195,8 @@ export function RunDetailPage() {
             {run.inputBinding ? (
               <>
                 <hr className="divider" />
-                <h3 className="field-label" style={{ marginBottom: 6 }}>
-                  输入绑定
-                </h3>
+                <details className="fold">
+                  <summary>输入是怎样绑定的</summary>
                 <dl className="kv">
                   <dt>基线引用</dt>
                   <dd className="mono">{run.inputBinding.baseRef ?? '无'}</dd>
@@ -211,6 +207,7 @@ export function RunDetailPage() {
                   <dt>绑定时间</dt>
                   <dd>{formatDateTime(run.inputBinding.boundAt)}</dd>
                 </dl>
+                </details>
               </>
             ) : null}
             {facts.length > 0 ? (
@@ -240,8 +237,8 @@ export function RunDetailPage() {
           />
 
           {issue ? (
-            <section className="panel" aria-label="所属工单状态">
-              <h2 className="section-title">所属工单</h2>
+            <section className="panel" aria-label="所属任务">
+              <h2 className="section-title">所属任务</h2>
               <dl className="kv">
                 <dt>标题</dt>
                 <dd>
@@ -251,7 +248,7 @@ export function RunDetailPage() {
                 <dd>{issueStatusMeta(issue.status).label}</dd>
               </dl>
               <p className="muted small" style={{ marginBottom: 0 }}>
-                取消或中止执行请在工单详情页操作；取消工单会向此实例发送取消信号。
+                取消执行请回到任务页操作。取消任务会向这次执行发送取消信号。
               </p>
             </section>
           ) : null}
@@ -342,17 +339,7 @@ function RunEventsPanel({
       ) : (
         <div className="events">
           {[...events].reverse().map((event) => (
-            <div className="event" key={event.sequence}>
-              <span className="event-time" title={formatDateTime(event.createdAt)}>
-                {formatClock(event.createdAt)}
-              </span>
-              <div>
-                <span className="event-type">{event.type}</span>
-                {event.data !== null && event.data !== undefined ? (
-                  <JsonDetails data={event.data} summary="详情" />
-                ) : null}
-              </div>
-            </div>
+            <EventLine key={event.sequence} event={event} />
           ))}
         </div>
       )}
@@ -407,6 +394,7 @@ function MessagePanel({ runId, active }: { runId: string; active: boolean }) {
             <textarea
               id="run-message"
               className="textarea"
+              disabled={busy}
               rows={3}
               value={text}
               onChange={(e) => setText(e.target.value)}
@@ -425,7 +413,7 @@ function MessagePanel({ runId, active }: { runId: string; active: boolean }) {
           </div>
         </form>
       ) : (
-        <EmptyState title="实例已结束" hint="消息只能在实例运行期间发送。执行记录与交付保留在工单详情页。" />
+        <EmptyState title="这次执行已经结束" hint="消息只能在执行期间发送。记录和交付留在任务页。" />
       )}
     </section>
   )

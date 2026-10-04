@@ -9,10 +9,10 @@ import { ErrorBox, Field, LoadingBlock } from '@/components/ui'
 type LimitsDraft = Pick<SchedulerSettings, 'globalMaxActive' | 'profileLimits' | 'providerLimits'>
 
 const reasonNames: Record<DispatchReason, string> = {
-  ready: '可调度', dependency: '等待依赖应用', paused: '项目已暂停', environment: '环境检查未通过',
-  global_capacity: '全局容量已满', storage_capacity: '存储容量不足', profile_capacity: 'Profile 容量已满', provider_capacity: '供应商容量已满',
-  profile_unavailable: 'Profile 不可用', scope_busy: '文件范围被占用', running: '执行中',
-  needs_input: '等待输入', review: '等待验收', integration: '等待集成', complete: '已完成',
+  ready: '可以开始', dependency: '还在等依赖写入项目', paused: '项目已暂停接单', environment: '环境检查未通过',
+  global_capacity: '同时执行已达上限', storage_capacity: '存储空间不足', profile_capacity: '这份执行配置已达上限', provider_capacity: '供应商已达上限',
+  profile_unavailable: '执行配置不可用', scope_busy: '文件范围正被占用', running: '执行中',
+  needs_input: '等待回答', review: '等待验收', integration: '等待写入项目', complete: '已完成',
   failed: '执行失败', cancelled: '已取消', recovery: '等待恢复',
 }
 
@@ -140,7 +140,7 @@ export function DispatchPage() {
   const profileNames = new Map(profileRows.map((profile) => [profile.id, profile.name]))
 
   return <div className="page">
-    <div className="page-head"><div><h1 className="page-title">调度</h1><div className="page-desc">查看容量、项目状态与工单等待原因。</div></div>
+    <div className="page-head"><div><h1 className="page-title">运行调度</h1><div className="page-desc">看同时能跑几张任务、项目是否还在接单，以及任务为什么还在等。</div></div>
       <div className="head-actions"><button type="button" className="btn" onClick={snapshot.refetch}>刷新状态</button></div></div>
     {(!currentSnapshot || snapshot.loading) && !snapshot.error ? <LoadingBlock label="正在加载调度状态…" /> : null}
     {snapshot.error ? <ErrorBox error={snapshot.error} onRetry={snapshot.refetch} /> : null}
@@ -151,7 +151,7 @@ export function DispatchPage() {
         <form onSubmit={(event) => void save(event)}>
           <Field label="全局同时执行上限" htmlFor="dispatch-global"><input id="dispatch-global" className="input" style={{ width: 110 }} type="number" min="1" step="1" required
             value={draft.globalMaxActive} onChange={(event) => setDraft((current) => current && { ...current, globalMaxActive: Number(event.target.value) })} /></Field>
-          <h3 className="field-label">Profile 上限</h3>
+          <h3 className="field-label">每份执行配置的上限</h3>
           <div className="dispatch-limits">
             {[...profileRows.map((profile) => ({ id: profile.id, label: profile.name })), ...extraProfiles.map((id) => ({ id, label: id }))].map(({ id, label }) =>
               <label key={id} className="dispatch-limit"><span>{label}<span className="muted small"> · 活跃 {currentSnapshot?.profileActiveCounts[id] ?? 0}</span></span>{capacityInput(draft.profileLimits[id], (value) => updateLimit('profileLimits', id, value), `${label} 同时执行上限`)}</label>)}
@@ -178,15 +178,15 @@ export function DispatchPage() {
                 <button type="button" className="btn btn-sm" disabled={projectBusy !== null} onClick={() => void changeProject(state, 'readiness')}>重查环境</button></div></div>
           </li>)}</ul>}
       </section>
-      <section className="panel" aria-label="工单调度原因"><h2 className="section-title">工单等待原因</h2>
+      <section className="panel" aria-label="任务为什么在等"><h2 className="section-title">任务为什么在等</h2>
         <Field label="筛选项目" htmlFor="dispatch-project-filter"><select id="dispatch-project-filter" className="select" value={projectId} onChange={(event) => setProjectId(event.target.value)}>
           <option value="">全部项目</option>{(projects.data?.items ?? []).map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
         </select></Field>
-        {currentSnapshot.decisions.length === 0 ? <p className="muted small">当前没有待调度工单。</p> :
+        {currentSnapshot.decisions.length === 0 ? <p className="muted small">当前没有等待调度的任务。</p> :
           <ul className="list-plain">{currentSnapshot.decisions.map((decision) => <li key={decision.issueId}>
-            <div className="dispatch-project"><Link to={`/issues/${encodeURIComponent(decision.issueId)}`}>{decision.issueTitle || `工单 ${decision.issueId.slice(0, 8)}`}</Link><strong>{reasonNames[decision.reason] ?? decision.reason}</strong></div>
-            {diagnosticReasons.has(decision.reason) && decision.detail ? <div className="muted small">{decision.detail}</div> : null}
-            {decision.profileId ? <div className="muted small">Profile：{profileNames.get(decision.profileId) ?? decision.profileId.slice(0, 8)}</div> : null}
+            <div className="dispatch-project"><Link to={`/issues/${encodeURIComponent(decision.issueId)}`}>{decision.issueTitle || '未命名任务'}</Link><strong>{reasonNames[decision.reason] ?? decision.reason}</strong></div>
+            {diagnosticReasons.has(decision.reason) && decision.detail ? <details className="fold"><summary>查看详细原因</summary><div className="muted small">{decision.detail}</div></details> : null}
+            {decision.profileId ? <div className="muted small">执行配置：{profileNames.get(decision.profileId) ?? '列表中没有这份配置'}</div> : null}
           </li>)}</ul>}
       </section>
     </> : null}

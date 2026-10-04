@@ -69,12 +69,12 @@ export function StorageSettingsPanel() {
     <section className="panel" aria-label="存储管理">
       <h2 className="section-title">存储管理</h2>
       <p className="muted small" style={{ marginTop: 0 }}>
-        排队仅保存工单记录，开始执行时才建立工作目录。活动执行、发布候选和不可变交付计入实际占用。
+        排队只保存任务记录，开始执行时才建立工作目录。正在执行的内容、准备好的候选和冻结交付都计入实际占用。
         预算用于调度和预约，不能替代操作系统硬配额。
       </p>
 
       <p className="muted small">
-        每次执行使用私有副本，暂不共享缓存。交付保存且执行进程确认退出后回收成功 Run 的工作目录；
+        每次执行使用私有副本，暂不共享缓存。交付保存且执行进程确认退出后回收已完成执行的工作目录；
         未完成执行和恢复检查点持续保留。
       </p>
 
@@ -114,7 +114,7 @@ export function StorageSettingsPanel() {
             <dd>{s.policy.maxManagedBytes !== null ? formatBytes(s.policy.maxManagedBytes) : '无上限'}</dd>
             <dt>安全余量</dt>
             <dd>{formatBytes(s.policy.minFreeBytes)}</dd>
-            <dt>每 Run 默认预约</dt>
+            <dt>每次执行默认预留</dt>
             <dd>{formatBytes(s.policy.defaultRunReserveBytes)}</dd>
             <dt>发布预留</dt>
             <dd>{formatBytes(s.policy.artifactPublishReserveBytes)}</dd>
@@ -148,7 +148,7 @@ export function StorageSettingsPanel() {
               required
             />
           </Field>
-          <Field label="每 Run 默认预约（字节）" htmlFor="storage-run" hint="在源文件复制估算之外，为执行增长预留空间。">
+          <Field label="每次执行默认预留（字节）" htmlFor="storage-run" hint="在源文件复制估算之外，为执行增长预留空间。">
             <input
               id="storage-run"
               className="input mono"

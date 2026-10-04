@@ -26,11 +26,11 @@ export function ProfileDetailPage() {
     setBusy(true)
     try {
       await profilesApi.update(profile.id, { disabled: !profile.disabled }, profile.revision)
-      toast.notify(profile.disabled ? 'Profile 已启用' : 'Profile 已停用')
+      toast.notify(profile.disabled ? '执行配置已启用' : '执行配置已停用')
       listQuery.refetch()
     } catch (err) {
       if (isConflict(err)) {
-        toast.notifyError('Profile 已被他处修改，已刷新。')
+        toast.notifyError('这份执行配置已被别处修改，已刷新。')
         listQuery.refetch()
       } else {
         toast.notifyError(err instanceof Error ? err.message : '操作失败')
@@ -43,7 +43,7 @@ export function ProfileDetailPage() {
   if (listQuery.loading) {
     return (
       <div className="page">
-        <LoadingBlock label="正在加载 Profile…" />
+        <LoadingBlock label="正在加载执行配置…" />
       </div>
     )
   }
@@ -58,11 +58,11 @@ export function ProfileDetailPage() {
     return (
       <div className="page">
         <EmptyState
-          title="未找到此 Profile"
+          title="找不到这份执行配置"
           hint="它可能已被删除，或当前会话无权查看。"
           action={
             <Link className="btn" to="/profiles">
-              返回 Profile 列表
+              返回执行配置
             </Link>
           }
         />
@@ -122,11 +122,11 @@ export function ProfileDetailPage() {
               修改配置会产生新的修订，此后领取的实例使用新配置；已领取的实例保留各自冻结的配置。
             </p>
             {profile.harnessId !== 'dsh-acp-0.1.7' ? (
-              <p className="muted small">此 Profile 使用其他执行器，第一阶段仅支持原生 DSH。</p>
+              <p className="muted small">这份配置使用其他执行器。当前只支持原生 DSH。</p>
             ) : null}
           </section>
 
-          <section className="panel" aria-label="Profile 履历">
+          <section className="panel" aria-label="评价履历">
             <h2 className="section-title">
               履历 <span className="count">{history.length} 个修订</span>
             </h2>
@@ -136,7 +136,7 @@ export function ProfileDetailPage() {
               <ErrorBox error={historyQuery.error} onRetry={historyQuery.refetch} />
             ) : history.length === 0 ? (
               <p className="muted small">
-                还没有评价记录。工单被评价后，这里按配置修订展示平均分与已评工单数；未评分工单不计入。
+                还没有评价。任务被评价后，这里按每一版配置显示平均分和已评任务数。没打分的任务不会计入。
               </p>
             ) : (
               <>
@@ -150,7 +150,7 @@ export function ProfileDetailPage() {
                           {entry.evaluatedCount > 0 && entry.averageScore !== null ? (
                             <>
                               <strong>{entry.averageScore.toFixed(1)}</strong>
-                              <span className="muted small"> / 5 · {entry.evaluatedCount} 张已评工单</span>
+                              <span className="muted small"> / 5 · {entry.evaluatedCount} 张已评任务</span>
                             </>
                           ) : (
                             <span className="muted small">尚无有效评价</span>
@@ -159,7 +159,7 @@ export function ProfileDetailPage() {
                       </div>
                       {entry.issueIds.length > 0 ? (
                         <div className="row-meta" style={{ marginTop: 4 }}>
-                          来源工单：
+                          来自这些任务：
                           {entry.issueIds.map((issueId) => (
                             <Link key={issueId} to={`/issues/${encodeURIComponent(issueId)}`}>
                               <IdTag value={issueId} />
@@ -171,7 +171,7 @@ export function ProfileDetailPage() {
                   ))}
                 </ul>
                 <p className="muted small" style={{ marginBottom: 0 }}>
-                  平均分为已评独立工单的简单均值，每张工单只计最新有效评价；可追溯至具体工单。
+                  平均分是已评任务的简单平均，每张任务只计最新的有效评价，并能回到那张任务。
                 </p>
               </>
             )}
@@ -180,13 +180,13 @@ export function ProfileDetailPage() {
 
         <div>
           <section className="panel" aria-label="使用说明">
-            <h2 className="section-title">实例与工单</h2>
+            <h2 className="section-title">和任务的关系</h2>
             <p className="muted small">
-              同一 Profile 可并行启动多个实例，实例使用相同头像与配置快照，互不混淆。
-              实例入口在对应工单的详情页中；历史执行可通过上方履历中的工单追溯。
+              同一份执行配置可以同时跑多个执行，头像和当时冻结的配置都一样，彼此不会混。
+              从任务页进入某一次执行；上面的履历也能回到对应任务。
             </p>
             <p className="muted small" style={{ marginBottom: 0 }}>
-              停用后此 Profile 不能再用于新工单，进行中的执行不受影响。
+              停用后，新任务不能再选它。已经在跑的执行不受影响。
             </p>
           </section>
         </div>

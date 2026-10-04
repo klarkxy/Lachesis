@@ -372,8 +372,8 @@ function normalizeDeliveryReport(raw: unknown): DeliveryReport {
 }
 
 export const issuesApi = {
-  async list(filter: { projectId?: string; status?: string; cursor?: string | null }): Promise<Page<Issue>> {
-    return asPage<Issue>(
+  async list(filter: { projectId?: string; status?: string; cursor?: string | null }): Promise<Page<import('./types').IssueListItem>> {
+    return asPage<import('./types').IssueListItem>(
       await api<unknown>('/issues', {
         query: {
           projectId: filter.projectId,
@@ -548,6 +548,12 @@ export const eventsApi = {
 /** 交付物文件的授权下载地址（同源 <a> 携带 Cookie）。 */
 export function deliveryFileUrl(deliveryId: Id, path: string): string {
   return `${API_PREFIX}/deliveries/${encodeURIComponent(deliveryId)}/files/${encodeURIComponent(path)}`
+}
+
+export const deliveriesApi = {
+  review(deliveryId: Id, path: string): Promise<import('./types').DeliveryFileReview> {
+    return api(`/deliveries/${encodeURIComponent(deliveryId)}/review`, { query: { path } })
+  },
 }
 
 export function checkpointFileUrl(checkpointId: Id, path: string): string {

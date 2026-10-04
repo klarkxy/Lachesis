@@ -18,28 +18,28 @@ export function ProfilesPage() {
     <div className="page">
       <div className="page-head">
         <div>
-          <h1 className="page-title">Profile</h1>
+          <h1 className="page-title">执行配置</h1>
           <div className="page-desc">
-            可复用的执行配置：供应商、模型与思考强度。同一 Profile 可并行启动多个实例，身份与头像保持一致。
+            谁来做任务：模型、供应商和思考强度。同一份配置可以同时跑多个执行，头像保持不变。
           </div>
         </div>
         <div className="head-actions">
           <button type="button" className="btn btn-primary" onClick={() => setCreateOpen(true)}>
-            新建 Profile
+            新建执行配置
           </button>
         </div>
       </div>
 
       {query.error ? <ErrorBox error={query.error} onRetry={query.refetch} /> : null}
       {query.loading ? (
-        <LoadingBlock label="正在加载 Profile…" />
+        <LoadingBlock label="正在加载执行配置…" />
       ) : profiles.length === 0 ? (
         <EmptyState
-          title="还没有 Profile"
-          hint="Profile 是执行工单时使用的模型配置。创建一个后即可在工单中指定。"
+          title="还没有执行配置"
+          hint="执行配置决定任务用哪个模型。创建一份之后，就可以在任务里指定它。"
           action={
             <button type="button" className="btn btn-primary" onClick={() => setCreateOpen(true)}>
-              新建 Profile
+              新建执行配置
             </button>
           }
         />
@@ -62,14 +62,14 @@ export function ProfilesPage() {
                   <span>创建于 {timeAgo(profile.createdAt)}</span>
                 </div>
               </div>
-              <div className="row-aside muted small">{profile.disabled ? '不可用于新工单' : '可用'}</div>
+              <div className="row-aside muted small">{profile.disabled ? '不能用于新任务' : '可用'}</div>
             </Link>
           ))}
         </div>
       )}
       {profiles.length > 0 && enabled.length === 0 ? (
         <div className="notice-box" style={{ marginTop: 12 }}>
-          所有 Profile 均已停用，新工单无法指定执行配置。启用或新建一个 Profile 后再派工。
+          执行配置都停用了，新任务不能指定它们。启用一份或新建一份后再使用。
         </div>
       ) : null}
 

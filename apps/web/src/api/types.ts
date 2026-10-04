@@ -147,3 +147,19 @@ export interface CreatedToken {
   token: string
   id: Id
 }
+
+/** Read-only comparison of immutable task input and frozen delivery bytes. */
+export interface DeliveryFileReview {
+  path: string
+  kind: 'added' | 'modified' | 'deleted'
+  before: string | null
+  after: string | null
+  binary: boolean
+  truncated: boolean
+  unavailableReason: string | null
+}
+
+/** UI projection; the core task state is unchanged. */
+export interface IssueListItem extends Issue {
+  applicationStatus?: import('@lachesis/contracts').ApplicationStatus | null
+}
