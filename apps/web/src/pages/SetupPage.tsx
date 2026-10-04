@@ -43,8 +43,8 @@ export function SetupPage({ onPaired }: { onPaired: () => void }) {
         <div className="panel">
           <h1 className="section-title">配对此浏览器</h1>
           <p className="muted small" style={{ marginTop: 0 }}>
-            Lachesis 首次在浏览器中打开时需要配对。请在运行服务的本机终端中查看一次性设置码，
-            并在此处输入。配对成功后，本会话通过安全 Cookie 与 CSRF 令牌工作。
+            请复制启动服务时本机终端显示的一次性设置码，并在此处输入。
+            每次启动都会生成新码；找不到码时，请重启服务。
           </p>
           <form onSubmit={submit}>
             <div className="field">
@@ -59,7 +59,7 @@ export function SetupPage({ onPaired }: { onPaired: () => void }) {
                 autoComplete="off"
                 autoFocus
                 disabled={busy}
-                placeholder="例如 8 位本机设置码"
+                placeholder="粘贴终端中的 16 位设置码"
               />
             </div>
             {error ? <ErrorBox error={error} /> : null}
@@ -72,7 +72,7 @@ export function SetupPage({ onPaired }: { onPaired: () => void }) {
         </div>
         {message ? null : (
           <p className="muted small" style={{ textAlign: 'center', marginTop: 14 }}>
-            设置码不会出现在任何日志或事件中；输入错误不会产生账号或费用。
+            设置码只能使用一次，请勿分享给他人。
           </p>
         )}
       </div>

@@ -10,6 +10,35 @@ function request(method: string, headers: Record<string, string>): IncomingMessa
   return { method, headers } as unknown as IncomingMessage
 }
 
+test('a new startup pairing code survives persistence and preserves sessions and tokens', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'lachesis-auth-restart-'))
+  try {
+    const original = new AuthStore(dir)
+    const session = original.pair(original.initialSetupCode!)
+    const cookie = session.cookie.split(';')[0]!
+    const token = original.createToken(['project-a'], ['issue.read'])
+    const previousCode = original.issuePairingCode()
+
+    const restarted = new AuthStore(dir)
+    const code = restarted.initialSetupCode ?? restarted.issuePairingCode()
+    assert.match(code, /^[a-f0-9]{16}$/)
+    assert.notEqual(code, previousCode)
+    assert.throws(() => restarted.pair(previousCode),
+      (error) => error instanceof AuthError && error.code === 'invalid_setup_code')
+    assert.equal(restarted.session(request('GET', { cookie }))?.csrf, session.csrf)
+    assert.equal(restarted.authenticate(request('GET', { authorization: `Bearer ${token.token}` }),
+      'issue.read', 'project-a').id, token.id)
+    assert.equal(readFileSync(join(dir, 'auth.json'), 'utf8').includes(code), false)
+
+    const persisted = new AuthStore(dir)
+    assert.ok(persisted.pair(code).cookie)
+    assert.throws(() => persisted.pair(code),
+      (error) => error instanceof AuthError && error.code === 'invalid_setup_code')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('pairing is one use and tokens remain scoped', () => {
   const dir = mkdtempSync(join(tmpdir(), 'lachesis-auth-'))
   try {

@@ -111,6 +111,7 @@ try {
   if (mcp.headers.get('content-type')?.includes('text/html')) {
     throw new Error('Lachesis MCP endpoint failed to activate')
   }
+  process.stdout.write(`Lachesis is ready: http://127.0.0.1:${port}/\nPress Ctrl+C to stop the service.\n`)
   process.once('exit', () => {
     try { rmSync(target, { recursive: true, force: true }) } catch { /* OS temp cleanup is best effort. */ }
   })

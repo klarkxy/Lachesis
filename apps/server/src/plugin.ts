@@ -136,9 +136,10 @@ export default class LachesisServer extends Service {
     }
     try {
     const auth = new AuthStore(lease.dataRoot)
-    if (auth.initialSetupCode) {
-      process.stderr.write(`Lachesis first-browser setup code: ${auth.initialSetupCode}\n`)
-    }
+    // Only hashes are persisted, so an earlier code cannot be printed again.
+    // Rotate the pending code on restart without invalidating existing sessions.
+    const pairingCode = auth.initialSetupCode ?? auth.issuePairingCode()
+    process.stderr.write(`Lachesis one-time browser pairing code: ${pairingCode}\n`)
     const health = this.ctx.webServer.register({
       kind: 'exact',
       path: '/api/v1/health',
